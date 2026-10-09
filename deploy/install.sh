@@ -5,9 +5,9 @@
 # 目标机上用本脚本从源码目录编译安装。
 #
 # 用法（在仓库根目录）：
-#   ./isobuilder/deploy/install.sh                 # 本机编译 + 安装（需要 go / pnpm 或已构建产物）
-#   ./isobuilder/deploy/install.sh --from-release isobuilder-0.1.0-linux-amd64.tar.gz
-#   ./isobuilder/deploy/install.sh --uninstall
+#   ./deploy/install.sh                 # 本机编译 + 安装（需要 go / pnpm 或已构建产物）
+#   ./deploy/install.sh --from-release isobuilder-0.1.0-linux-amd64.tar.gz
+#   ./deploy/install.sh --uninstall
 #
 # 安装位置：
 #   /opt/isobuilder/{isobuilder,web,kickstarts,scripts,README.md}
@@ -81,10 +81,10 @@ if [ -n "$FROM_RELEASE" ]; then
 else
     repo_root="$(cd "$(dirname "$0")/.." && pwd)"
     need go
-    log "编译后端（源码目录 $repo_root/isobuilder/backend）"
+    log "编译后端（源码目录 $repo_root/backend）"
     (cd "$repo_root/backend" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$PREFIX/isobuilder" ./cmd/isobuilder)
 
-    if [ -d "$repo_root/isobuilder/backend/web/dist" ] && [ -f "$repo_root/isobuilder/backend/web/dist/index.html" ]; then
+    if [ -d "$repo_root/backend/web/dist" ] && [ -f "$repo_root/backend/web/dist/index.html" ]; then
         log "使用已构建的前端产物"
     else
         need pnpm

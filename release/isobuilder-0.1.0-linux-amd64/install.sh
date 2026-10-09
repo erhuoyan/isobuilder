@@ -5,9 +5,9 @@
 # 目标机上用本脚本从源码目录编译安装。
 #
 # 用法（在仓库根目录）：
-#   ./isobuilder/deploy/install.sh                 # 本机编译 + 安装（需要 go / pnpm 或已构建产物）
-#   ./isobuilder/deploy/install.sh --from-release isobuilder-0.1.0-linux-amd64.tar.gz
-#   ./isobuilder/deploy/install.sh --uninstall
+#   ./deploy/install.sh                 # 本机编译 + 安装（需要 go / pnpm 或已构建产物）
+#   ./deploy/install.sh --from-release isobuilder-0.1.0-linux-amd64.tar.gz
+#   ./deploy/install.sh --uninstall
 #
 # 安装位置：
 #   /opt/isobuilder/{isobuilder,web,kickstarts,scripts,README.md}
@@ -79,24 +79,24 @@ if [ -n "$FROM_RELEASE" ]; then
     rm -rf "$PREFIX/scripts"; cp -R "$src/scripts" "$PREFIX/scripts"
     [ -f "$src/README.md" ] && install -m 0644 "$src/README.md" "$PREFIX/README.md"
 else
-    repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+    repo_root="$(cd "$(dirname "$0")/.." && pwd)"
     need go
-    log "编译后端（源码目录 $repo_root/isobuilder/backend）"
-    (cd "$repo_root/isobuilder/backend" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$PREFIX/isobuilder" ./cmd/isobuilder)
+    log "编译后端（源码目录 $repo_root/backend）"
+    (cd "$repo_root/backend" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$PREFIX/isobuilder" ./cmd/isobuilder)
 
-    if [ -d "$repo_root/isobuilder/backend/web/dist" ] && [ -f "$repo_root/isobuilder/backend/web/dist/index.html" ]; then
+    if [ -d "$repo_root/backend/web/dist" ] && [ -f "$repo_root/backend/web/dist/index.html" ]; then
         log "使用已构建的前端产物"
     else
         need pnpm
         log "构建前端（首次约 2-3 分钟）"
-        (cd "$repo_root/isobuilder/frontend" && pnpm install && pnpm build)
+        (cd "$repo_root/frontend" && pnpm install && pnpm build)
     fi
-    rm -rf "$PREFIX/web"; cp -R "$repo_root/isobuilder/backend/web/dist" "$PREFIX/web"
+    rm -rf "$PREFIX/web"; cp -R "$repo_root/backend/web/dist" "$PREFIX/web"
     rm -rf "$PREFIX/kickstarts"; mkdir -p "$PREFIX/kickstarts"
-    cp "$repo_root"/*.ks "$PREFIX/kickstarts/" 2>/dev/null || true
+    cp "$repo_root"/kickstarts/*.ks "$PREFIX/kickstarts/" 2>/dev/null || true
     rm -rf "$PREFIX/scripts"; mkdir -p "$PREFIX/scripts"
-    cp "$repo_root"/repack-iso-*.sh "$PREFIX/scripts/" 2>/dev/null || true
-    install -m 0644 "$repo_root/isobuilder/README.md" "$PREFIX/README.md"
+    cp "$repo_root"/scripts/repack-iso-*.sh "$PREFIX/scripts/" 2>/dev/null || true
+    install -m 0644 "$repo_root/README.md" "$PREFIX/README.md"
 fi
 chmod 0755 "$PREFIX/isobuilder"
 

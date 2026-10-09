@@ -22,11 +22,11 @@ URL，交付工程师直接 `curl` 下载写盘或挂 BMC 虚拟光驱装机。
 
 ```bash
 # 构建机：打发布包（交叉编译 linux/amd64，自动重新构建前端）
-./isobuilder/deploy/release.sh 0.1.0
-#   → isobuilder/release/isobuilder-0.1.0-linux-amd64.tar.gz
+./deploy/release.sh 0.1.0
+#   → release/isobuilder-0.1.0-linux-amd64.tar.gz
 
 # 目标机：装依赖 + 二进制 + systemd
-scp isobuilder/release/isobuilder-0.1.0-linux-amd64.tar.gz root@<host>:/root/
+scp release/isobuilder-0.1.0-linux-amd64.tar.gz root@<host>:/root/
 ssh root@<host> 'mkdir -p /root/rel && tar xzf /root/isobuilder-0.1.0-linux-amd64.tar.gz -C /root/rel --strip-components=1 \
                  && /root/rel/install.sh --from-release /root/isobuilder-0.1.0-linux-amd64.tar.gz'
 ```
@@ -47,12 +47,12 @@ journalctl -u isobuilder -f
 
 ```bash
 # 后端（go ≥ 1.24，依赖 xorriso、isoinfo、isohybrid、implantisomd5）
-cd isobuilder/backend
+cd backend
 go run ./cmd/isobuilder
 # 配置用环境变量，开发目录自动在当前仓库根创建 data/
 
 # 前端（node ≥ 22 + pnpm）
-cd isobuilder/frontend
+cd frontend
 pnpm install
 pnpm dev        # → http://127.0.0.1:9527，API 自动代理到 127.0.0.1:8080
 ```

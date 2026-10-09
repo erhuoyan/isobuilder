@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 打发布包：isobuilder-<version>-linux-<arch>.tar.gz
-# 在仓库根目录执行：./isobuilder/deploy/build-release.sh [版本号]
+# 在仓库根目录执行：./deploy/release.sh [版本号]
 #
 # 产物结构：
 #   isobuilder-0.1.0-linux-amd64.tar.gz
@@ -13,7 +13,7 @@ set -euo pipefail
 
 VERSION="${1:-0.1.0}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$ROOT/isobuilder/release"
+OUT="$ROOT/release"
 GOOS_TARGET="${GOOS_TARGET:-linux}"
 GOARCH_TARGET="${GOARCH_TARGET:-amd64}"
 STAGE="$OUT/isobuilder-$VERSION-$GOOS_TARGET-$GOARCH_TARGET"
@@ -23,7 +23,7 @@ STAGE="$OUT/isobuilder-$VERSION-$GOOS_TARGET-$GOARCH_TARGET"
 # 确认产物是最新时可加 --skip-web 跳过，节省约 1 分钟。
 if [ "${SKIP_WEB:-0}" = "1" ]; then
     echo "▶ 跳过前端构建（SKIP_WEB=1），使用现有 dist/"
-    [ -f "$ROOT/isobuilder/backend/web/dist/index.html" ] || { echo "dist/ 不存在，无法跳过前端构建"; exit 1; }
+    [ -f "$ROOT/backend/web/dist/index.html" ] || { echo "dist/ 不存在，无法跳过前端构建"; exit 1; }
 else
     echo "▶ 构建前端"
     (cd "$ROOT/frontend" && pnpm install && pnpm build)
@@ -38,7 +38,7 @@ rm -rf "$STAGE"; mkdir -p "$STAGE"
 echo "▶ 收集前端、模板与脚本"
 # 排除 macOS AppleDouble 旁文件（._foo.ks）：它们没有任何占位符，会让模板库里
 # 出现一堆不可用的 163 字节「模板」。
-tar -cf - --exclude='._*' --exclude='.DS_Store' -C "$ROOT/isobuilder/backend/web/dist" . \
+tar -cf - --exclude='._*' --exclude='.DS_Store' -C "$ROOT/backend/web/dist" . \
     | (mkdir -p "$STAGE/web" && tar -xf - -C "$STAGE/web")
 mkdir -p "$STAGE/kickstarts" "$STAGE/scripts"
 cp "$ROOT"/kickstarts/*.ks "$STAGE/kickstarts/"
