@@ -1,0 +1,17 @@
+.git
+.omp
+.omp/*
+diagram
+docs
+*.svg
+*.excalidraw
+*.png
+blog.md
+README.md
+hosts*.yaml
+
+isobuilder/docs
+isobuilder/frontend/node_modules
+isobuilder/frontend/dist
+isobuilder/backend/web
+data

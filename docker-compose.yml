@@ -1,0 +1,39 @@
+name: isobuilder
+
+services:
+  isobuilder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: isobuilder:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - isobuilder-data:/data
+    environment:
+      # ── 对象存储（S3 兼容：MinIO / 京东云 OSS / 阿里云 OSS / Ceph RGW）──────────
+      # 不配 bucket 时产物留在本容器 /data/artifacts，由后端直传下载。
+      ISOBUILDER_S3_ENDPOINT: ${ISOBUILDER_S3_ENDPOINT:-}
+      ISOBUILDER_S3_REGION: ${ISOBUILDER_S3_REGION:-us-east-1}
+      ISOBUILDER_S3_BUCKET: ${ISOBUILDER_S3_BUCKET:-}
+      ISOBUILDER_S3_PREFIX: ${ISOBUILDER_S3_PREFIX:-auto-iso}
+      ISOBUILDER_S3_ACCESS_KEY: ${ISOBUILDER_S3_ACCESS_KEY:-}
+      ISOBUILDER_S3_SECRET_KEY: ${ISOBUILDER_S3_SECRET_KEY:-}
+      # 子路径风格：MinIO/私有对象存储必须为 true；AWS S3 用虚拟主机风格时设 false
+      ISOBUILDER_S3_PATH_STYLE: ${ISOBUILDER_S3_PATH_STYLE:-true}
+      ISOBUILDER_S3_INSECURE_TLS: ${ISOBUILDER_S3_INSECURE_TLS:-false}
+      # 填了它就用公共基地址拼 URL（不再做预签名），例如 https://cdn.example.com/auto-iso
+      ISOBUILDER_S3_PUBLIC_BASE: ${ISOBUILDER_S3_PUBLIC_BASE:-}
+      ISOBUILDER_S3_PRESIGN_TTL_SECONDS: ${ISOBUILDER_S3_PRESIGN_TTL_SECONDS:-86400}
+
+      # ── 服务设置 ──────────────────────────────────────────────────────────
+      ISOBUILDER_AUTH_TOKEN: ${ISOBUILDER_AUTH_TOKEN:-}
+      ISOBUILDER_MAX_CONCURRENT_BUILDS: ${ISOBUILDER_MAX_CONCURRENT_BUILDS:-1}
+      ISOBUILDER_MAX_UPLOAD_BYTES: ${ISOBUILDER_MAX_UPLOAD_BYTES:-42949672960}
+      ISOBUILDER_BUILD_TIMEOUT_MINUTES: ${ISOBUILDER_BUILD_TIMEOUT_MINUTES:-180}
+      ISOBUILDER_KEEP_WORK_DIR: ${ISOBUILDER_KEEP_WORK_DIR:-false}
+      ISOBUILDER_KEEP_LOCAL_ARTIFACT: ${ISOBUILDER_KEEP_LOCAL_ARTIFACT:-false}
+
+volumes:
+  isobuilder-data:
