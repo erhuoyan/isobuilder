@@ -17,7 +17,12 @@
 
 **明确不引入 K8s**（已对齐）：单 systemd 服务 + 子进程就是终态。
 
-## 二、2026-10-09 晚间追加（信封化 + v2.2.0 迁移 + 模板编辑）
+## 二、2026-10-09 晚间追加（信封化 + v2.2.0 迁移 + 模板编辑 + 表格导入）
+
+- 主机清单表格导入：xlsx/csv（SheetJS），列协议固定（TEMPLATE_COLUMNS，见 constants/hosts-template.ts），
+  表头归一化匹配（大小写/空格/下划线不敏感），空 cell 继承上一行非空值，
+  mac1+mac2 → bond，非协议列（bmc_mac/location 等）保留进主机 extra。
+  提供「下载模板」生成标准表头 xlsx。映射确认抽屉带行预览。
 
 - 后端响应信封化：全部 JSON 为 {code,message,data,details?}，业务错误 HTTP 200 + biz code，401 除外
 - 前端底版从 main 分支迁到官方 v2.2.0 release tarball（可复现），request 层回归 stock
