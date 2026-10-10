@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS isos (
   arch       TEXT NOT NULL,
   size_bytes INTEGER NOT NULL DEFAULT 0,
   sha256     TEXT NOT NULL DEFAULT '',
+  md5        TEXT NOT NULL DEFAULT '',
+  remark     TEXT NOT NULL DEFAULT '',
   status     TEXT NOT NULL,
   source     TEXT NOT NULL,
   path       TEXT NOT NULL,
@@ -46,6 +48,7 @@ CREATE TABLE IF NOT EXISTS kickstarts (
   name       TEXT NOT NULL,
   arch       TEXT NOT NULL,
   builtin    INTEGER NOT NULL DEFAULT 0,
+  remark     TEXT NOT NULL DEFAULT '',
   path       TEXT NOT NULL,
   size_bytes INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
@@ -101,6 +104,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   filename       TEXT NOT NULL,
   size_bytes     INTEGER NOT NULL DEFAULT 0,
   sha256         TEXT NOT NULL DEFAULT '',
+  md5            TEXT NOT NULL DEFAULT '',
   storage        TEXT NOT NULL,
   storage_key    TEXT NOT NULL DEFAULT '',
   url            TEXT NOT NULL DEFAULT '',
@@ -132,6 +136,18 @@ func Open(path string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	// 已存在的旧库补列（CREATE TABLE IF NOT EXISTS 不会改老表结构）
+	for _, stmt := range []string{
+		"ALTER TABLE isos ADD COLUMN md5 TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE isos ADD COLUMN remark TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE artifacts ADD COLUMN md5 TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE kickstarts ADD COLUMN remark TEXT NOT NULL DEFAULT ''",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			// duplicate column → 已经迁移过，忽略
+			continue
+		}
+	}
 	s := &Store{db: db}
 	if _, err := db.Exec(`UPDATE builds SET status=?, error=?, finished_at=?
 	                      WHERE status IN (?,?)`,
@@ -160,7 +176,7 @@ func NewID() string {
 
 // ListISOs returns every ISO record, newest first.
 func (s *Store) ListISOs() ([]model.ISO, error) {
-	rows, err := s.db.Query(`SELECT id,name,filename,arch,size_bytes,sha256,status,source,path,error,created_at
+	rows, err := s.db.Query(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
 	                        FROM isos ORDER BY created_at DESC, rowid DESC`)
 	if err != nil {
 		return nil, err
@@ -169,7 +185,7 @@ func (s *Store) ListISOs() ([]model.ISO, error) {
 	out := []model.ISO{}
 	for rows.Next() {
 		var i model.ISO
-		if err := rows.Scan(&i.ID, &i.Name, &i.Filename, &i.Arch, &i.SizeBytes, &i.SHA256,
+		if err := rows.Scan(&i.ID, &i.Name, &i.Filename, &i.Arch, &i.SizeBytes, &i.SHA256, &i.MD5, &i.Remark,
 			&i.Status, &i.Source, &i.Path, &i.Error, &i.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -181,9 +197,9 @@ func (s *Store) ListISOs() ([]model.ISO, error) {
 // GetISO returns one ISO record.
 func (s *Store) GetISO(id string) (model.ISO, error) {
 	var i model.ISO
-	err := s.db.QueryRow(`SELECT id,name,filename,arch,size_bytes,sha256,status,source,path,error,created_at
+	err := s.db.QueryRow(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
 	                      FROM isos WHERE id=?`, id).
-		Scan(&i.ID, &i.Name, &i.Filename, &i.Arch, &i.SizeBytes, &i.SHA256, &i.Status, &i.Source, &i.Path, &i.Error, &i.CreatedAt)
+		Scan(&i.ID, &i.Name, &i.Filename, &i.Arch, &i.SizeBytes, &i.SHA256, &i.MD5, &i.Remark, &i.Status, &i.Source, &i.Path, &i.Error, &i.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return i, ErrNotFound
 	}
@@ -192,16 +208,21 @@ func (s *Store) GetISO(id string) (model.ISO, error) {
 
 // CreateISO inserts an ISO record.
 func (s *Store) CreateISO(i model.ISO) error {
-	_, err := s.db.Exec(`INSERT INTO isos(id,name,filename,arch,size_bytes,sha256,status,source,path,error,created_at)
-	                     VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		i.ID, i.Name, i.Filename, i.Arch, i.SizeBytes, i.SHA256, i.Status, i.Source, i.Path, i.Error, i.CreatedAt)
+	_, err := s.db.Exec(`INSERT INTO isos(id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at)
+	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		i.ID, i.Name, i.Filename, i.Arch, i.SizeBytes, i.SHA256, i.MD5, i.Remark, i.Status, i.Source, i.Path, i.Error, i.CreatedAt)
 	return err
 }
 
 // FinishISO records the terminal state of an upload or hash probe.
 func (s *Store) FinishISO(id, status, sha256 string, sizeBytes int64, errMsg string) error {
-	_, err := s.db.Exec(`UPDATE isos SET status=?, sha256=?, size_bytes=?, error=? WHERE id=?`,
-		status, sha256, sizeBytes, errMsg, id)
+	return s.FinishISOWithMD5(id, status, sha256, "", sizeBytes, errMsg)
+}
+
+// FinishISOWithMD5 additionally records an MD5 digest (装机校验习惯用 MD5).
+func (s *Store) FinishISOWithMD5(id, status, sha256, md5 string, sizeBytes int64, errMsg string) error {
+	_, err := s.db.Exec(`UPDATE isos SET status=?, sha256=?, md5=?, size_bytes=?, error=? WHERE id=?`,
+		status, sha256, md5, sizeBytes, errMsg, id)
 	return err
 }
 
@@ -215,7 +236,7 @@ func (s *Store) DeleteISO(id string) error {
 
 // ListKickstarts returns templates, built-ins first.
 func (s *Store) ListKickstarts() ([]model.Kickstart, error) {
-	rows, err := s.db.Query(`SELECT id,name,arch,builtin,path,size_bytes,created_at FROM kickstarts
+	rows, err := s.db.Query(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts
 	                         ORDER BY builtin DESC, name ASC`)
 	if err != nil {
 		return nil, err
@@ -224,7 +245,7 @@ func (s *Store) ListKickstarts() ([]model.Kickstart, error) {
 	out := []model.Kickstart{}
 	for rows.Next() {
 		var k model.Kickstart
-		if err := rows.Scan(&k.ID, &k.Name, &k.Arch, &k.Builtin, &k.Path, &k.SizeBytes, &k.CreatedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.Name, &k.Arch, &k.Builtin, &k.Remark, &k.Path, &k.SizeBytes, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, k)
@@ -235,8 +256,8 @@ func (s *Store) ListKickstarts() ([]model.Kickstart, error) {
 // GetKickstart returns one template.
 func (s *Store) GetKickstart(id string) (model.Kickstart, error) {
 	var k model.Kickstart
-	err := s.db.QueryRow(`SELECT id,name,arch,builtin,path,size_bytes,created_at FROM kickstarts WHERE id=?`, id).
-		Scan(&k.ID, &k.Name, &k.Arch, &k.Builtin, &k.Path, &k.SizeBytes, &k.CreatedAt)
+	err := s.db.QueryRow(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts WHERE id=?`, id).
+		Scan(&k.ID, &k.Name, &k.Arch, &k.Builtin, &k.Remark, &k.Path, &k.SizeBytes, &k.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return k, ErrNotFound
 	}
@@ -245,14 +266,14 @@ func (s *Store) GetKickstart(id string) (model.Kickstart, error) {
 
 // CreateKickstart inserts a template record.
 func (s *Store) CreateKickstart(k model.Kickstart) error {
-	_, err := s.db.Exec(`INSERT INTO kickstarts(id,name,arch,builtin,path,size_bytes,created_at) VALUES(?,?,?,?,?,?,?)`,
-		k.ID, k.Name, k.Arch, k.Builtin, k.Path, k.SizeBytes, k.CreatedAt)
+	_, err := s.db.Exec(`INSERT INTO kickstarts(id,name,arch,builtin,remark,path,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?)`,
+		k.ID, k.Name, k.Arch, k.Builtin, k.Remark, k.Path, k.SizeBytes, k.CreatedAt)
 	return err
 }
 
-// RenameKickstart sets the display name of a template.
-func (s *Store) RenameKickstart(id, name string) error {
-	_, err := s.db.Exec(`UPDATE kickstarts SET name=? WHERE id=?`, name, id)
+// UpdateKickstart updates the editable fields of a template.
+func (s *Store) UpdateKickstart(id, name, remark string) error {
+	_, err := s.db.Exec(`UPDATE kickstarts SET name=?, remark=? WHERE id=?`, name, remark, id)
 	return err
 }
 
@@ -582,8 +603,8 @@ func (s *Store) CountActiveBuildsForProject(projectID string) (int, error) {
 
 // CreateArtifact inserts an artifact record.
 func (s *Store) CreateArtifact(a model.Artifact) error {
-	_, err := s.db.Exec(`INSERT INTO artifacts(id,build_id,filename,size_bytes,sha256,storage,storage_key,url,url_expires_at,local_path,created_at)
-	                     VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+	_, err := s.db.Exec(`INSERT INTO artifacts(id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at)
+	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		a.ID, a.BuildID, a.Filename, a.SizeBytes, a.SHA256, a.Storage, a.StorageKey, a.URL,
 		a.URLExpiresAt, a.LocalPath, a.CreatedAt)
 	return err
@@ -598,9 +619,9 @@ func (s *Store) RefreshArtifactURL(id, url, expiresAt string) error {
 // GetArtifact returns one artifact.
 func (s *Store) GetArtifact(id string) (model.Artifact, error) {
 	var a model.Artifact
-	err := s.db.QueryRow(`SELECT id,build_id,filename,size_bytes,sha256,storage,storage_key,url,url_expires_at,local_path,created_at
+	err := s.db.QueryRow(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
 	                      FROM artifacts WHERE id=?`, id).
-		Scan(&a.ID, &a.BuildID, &a.Filename, &a.SizeBytes, &a.SHA256, &a.Storage, &a.StorageKey,
+		Scan(&a.ID, &a.BuildID, &a.Filename, &a.SizeBytes, &a.SHA256, &a.MD5, &a.Storage, &a.StorageKey,
 			&a.URL, &a.URLExpiresAt, &a.LocalPath, &a.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, ErrNotFound
@@ -609,7 +630,7 @@ func (s *Store) GetArtifact(id string) (model.Artifact, error) {
 }
 
 func (s *Store) artifactByBuild() (map[string]*model.Artifact, error) {
-	rows, err := s.db.Query(`SELECT id,build_id,filename,size_bytes,sha256,storage,storage_key,url,url_expires_at,local_path,created_at
+	rows, err := s.db.Query(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
 	                         FROM artifacts ORDER BY created_at DESC, rowid DESC`)
 	if err != nil {
 		return nil, err
@@ -618,7 +639,7 @@ func (s *Store) artifactByBuild() (map[string]*model.Artifact, error) {
 	out := map[string]*model.Artifact{}
 	for rows.Next() {
 		var a model.Artifact
-		if err := rows.Scan(&a.ID, &a.BuildID, &a.Filename, &a.SizeBytes, &a.SHA256, &a.Storage,
+		if err := rows.Scan(&a.ID, &a.BuildID, &a.Filename, &a.SizeBytes, &a.SHA256, &a.MD5, &a.Storage,
 			&a.StorageKey, &a.URL, &a.URLExpiresAt, &a.LocalPath, &a.CreatedAt); err != nil {
 			return nil, err
 		}

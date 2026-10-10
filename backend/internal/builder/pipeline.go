@@ -156,7 +156,8 @@ func (m *Manager) run(ctx context.Context, b model.Build, logFile *buildlog.File
 	// --- stage 4: repack --------------------------------------------------
 	pub.stageAt(4, "build")
 	outputPath := filepath.Join(workDir, b.OutputName)
-	if err := m.repack(ctx, pub, treeDir, outputPath, b.Arch, label); err != nil {
+	implanted, err := m.repack(ctx, pub, treeDir, outputPath, b.Arch, label)
+	if err != nil {
 		return err
 	}
 	pub.progress(1)
@@ -164,10 +165,11 @@ func (m *Manager) run(ctx context.Context, b model.Build, logFile *buildlog.File
 	// --- stage 5: checksum + publish -------------------------------------
 	pub.stageAt(5, "seal")
 	size, sum, err := hashFile(ctx, pub, outputPath)
+	_ = implanted
 	if err != nil {
 		return err
 	}
-	artifact, err := m.publish(ctx, pub, b, outputPath, size, sum)
+	artifact, err := m.publish(ctx, pub, b, outputPath, size, sum, implanted)
 	if err != nil {
 		return err
 	}
@@ -450,10 +452,10 @@ func patchGrubARMTree(pub *publisher, treeDir, label, ksRel string) error {
 //     grubx64.efi: BMC virtual CD loaders only understand FAT images.
 //   - implantisomd5 runs last, because isohybrid erases the checksum and strict
 //     BMCs refuse to boot an image without an MD5 marker.
-func (m *Manager) repack(ctx context.Context, pub *publisher, treeDir, outputPath, arch, label string) error {
+func (m *Manager) repack(ctx context.Context, pub *publisher, treeDir, outputPath, arch, label string) (string, error) {
 	efiBoot, err := findEFIBoot(treeDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	pub.logf("EFI 启动镜像: /%s", efiBoot)
 
@@ -461,7 +463,7 @@ func (m *Manager) repack(ctx context.Context, pub *publisher, treeDir, outputPat
 	if arch == model.ArchX86 {
 		isohdpx, err := findIsohdpx()
 		if err != nil {
-			return err
+			return "", err
 		}
 		pub.logf("isolinux MBR 模板: %s", isohdpx)
 		args = append(args,
@@ -479,10 +481,10 @@ func (m *Manager) repack(ctx context.Context, pub *publisher, treeDir, outputPat
 	args = append(args, ".")
 
 	if _, err := runToolIn(ctx, pub, treeDir, binMkisofs, args...); err != nil {
-		return fmt.Errorf("xorriso 重建 ISO 失败: %w", err)
+		return "", fmt.Errorf("xorriso 重建 ISO 失败: %w", err)
 	}
 	if fi, err := os.Stat(outputPath); err != nil || fi.Size() == 0 {
-		return errors.New("xorriso 未产出 ISO 文件")
+		return "", errors.New("xorriso 未产出 ISO 文件")
 	}
 	pub.progress(0.85)
 
@@ -491,14 +493,23 @@ func (m *Manager) repack(ctx context.Context, pub *publisher, treeDir, outputPat
 			pub.logf("警告: isohybrid -u 失败（%v），MBR/GPT 混合头可能不完整，BMC 可能不识别", err)
 		}
 	}
+	implantedMD5 := ""
 	if path, err := exec.LookPath(binMd5); err == nil {
-		if _, err := runTool(ctx, pub, path, "--force", outputPath); err != nil {
+		out, err := runTool(ctx, pub, path, "--force", outputPath)
+		if err != nil {
 			pub.logf("警告: implantisomd5 失败（%v），BMC 可能因缺少 MD5 标记拒绝启动", err)
+		} else {
+			// implantisomd5 prints `md5 = <digest>`; capture it for the artifact record
+			if m := regexp.MustCompile(`md5\s*=\s*([0-9a-f]{32})`).FindStringSubmatch(out); m != nil {
+				implantedMD5 = m[1]
+				pub.logf("产物 MD5: %s", implantedMD5)
+			}
 		}
 	} else {
 		pub.logf("警告: 未安装 implantisomd5（isomd5sum 包），BMC 可能拒绝启动")
 	}
-	return nil
+
+	return implantedMD5, nil
 }
 
 // findEFIBoot locates the FAT EFI boot image inside an extracted ISO tree.
@@ -567,13 +578,14 @@ func hashFile(ctx context.Context, pub *publisher, path string) (int64, string, 
 
 // publish registers the artifact, uploads it when object storage is configured
 // and records the download URL.
-func (m *Manager) publish(ctx context.Context, pub *publisher, b model.Build, outputPath string, size int64, sum string) (model.Artifact, error) {
+func (m *Manager) publish(ctx context.Context, pub *publisher, b model.Build, outputPath string, size int64, sum, md5 string) (model.Artifact, error) {
 	artifact := model.Artifact{
 		ID:        store.NewID(),
 		BuildID:   b.ID,
 		Filename:  filepath.Base(outputPath),
 		SizeBytes: size,
 		SHA256:    sum,
+		MD5:       md5,
 		CreatedAt: store.Now(),
 	}
 

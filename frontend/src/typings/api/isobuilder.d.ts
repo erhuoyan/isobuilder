@@ -5,6 +5,13 @@
  */
 declare namespace Api {
   namespace IsoBuilder {
+    /** the payload of `PUT /api/kickstarts/{id}`（字段省略＝不变，content 传入即更新正文） */
+    interface KickstartUpdatePayload {
+      name?: string;
+      remark?: string;
+      content?: string;
+    }
+
     /** The response envelope every isobuilder endpoint returns (`{code, message, data, details?}`). */
     interface Envelope<T> {
       code: string;
@@ -146,6 +153,7 @@ declare namespace Api {
       source: 'path' | 's3';
       path?: string;
       name?: string;
+      remark?: string;
       arch: Arch;
       s3?: S3RegisterSource;
     }
@@ -159,6 +167,10 @@ declare namespace Api {
       size_bytes: number;
       /** empty while the hash is being computed or when it failed */
       sha256: string;
+      /** 基础镜像的 MD5（装机侧校验习惯） */
+      md5: string;
+      /** 登记时填写的备注 */
+      remark: string;
       status: IsoStatus;
       source: IsoSource;
       path: string;
@@ -173,6 +185,8 @@ declare namespace Api {
       name: string;
       arch: KickstartArch;
       builtin: boolean;
+      /** 备注说明（可编辑） */
+      remark: string;
       placeholders: string[];
       size_bytes: number;
       created_at: string;

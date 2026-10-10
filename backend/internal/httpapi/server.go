@@ -89,6 +89,7 @@ func (s *Server) routes() {
 	m.HandleFunc("GET /api/kickstarts", s.handleListKickstarts)
 	m.HandleFunc("POST /api/kickstarts", s.handleCreateKickstart)
 	m.HandleFunc("GET /api/kickstarts/{id}/content", s.handleKickstartContent)
+	m.HandleFunc("PUT /api/kickstarts/{id}", s.handleUpdateKickstart)
 	m.HandleFunc("DELETE /api/kickstarts/{id}", s.handleDeleteKickstart)
 
 	// Projects

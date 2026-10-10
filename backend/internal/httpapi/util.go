@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -18,6 +19,22 @@ func parseIntQuery(r *http.Request, name string) (int64, error) {
 		return 0, fmt.Errorf("missing %s", name)
 	}
 	return strconv.ParseInt(raw, 10, 64)
+}
+
+// md5File computes the MD5 digest of a file (装机侧校验习惯用 MD5).
+func md5File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := md5.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // sha256File hashes a file and returns the digest and size.

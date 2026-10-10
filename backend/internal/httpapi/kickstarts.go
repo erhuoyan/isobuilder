@@ -96,19 +96,89 @@ func (s *Server) handleCreateKickstart(w http.ResponseWriter, r *http.Request) {
 		name = filename
 	}
 
+	remark := strings.TrimSpace(r.FormValue("remark"))
+
 	k, apiErr := s.storeKickstart(string(body), filename, arch)
 	if apiErr != nil {
 		apiErr.write(w)
 		return
 	}
 	if name != filename {
-		if err := s.store.RenameKickstart(k.ID, name); err != nil {
+		if err := s.store.UpdateKickstart(k.ID, name, remark); err != nil {
 			fail(w, http.StatusInternalServerError, "internal", "保存模板失败: "+err.Error())
 			return
 		}
 		k.Name = name
 	}
+	k.Remark = remark
 	writeJSON(w, http.StatusCreated, map[string]any{"kickstart": k})
+}
+
+// handleUpdateKickstart edits the editable metadata (name, remark) and, when a
+// body is present, the template content itself. The builtin flag cannot be
+// changed and built-in templates keep their files read-only.
+func (s *Server) handleUpdateKickstart(w http.ResponseWriter, r *http.Request) {
+	k, err := s.store.GetKickstart(r.PathValue("id"))
+	if err != nil {
+		storeFail(w, err, "模板")
+		return
+	}
+
+	var req struct {
+		Name    *string `json:"name"`
+		Remark  *string `json:"remark"`
+		Content *string `json:"content"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	name := k.Name
+	if req.Name != nil {
+		name = strings.TrimSpace(*req.Name)
+		if name == "" {
+			fail(w, http.StatusBadRequest, "invalid_name", "模板名称不能为空")
+			return
+		}
+	}
+
+	if req.Content != nil {
+		body := *req.Content
+		if strings.TrimSpace(body) == "" {
+			fail(w, http.StatusBadRequest, "empty_kickstart", "kickstart 内容为空")
+			return
+		}
+		if len(body) > maxKickstartBytes {
+			fail(w, http.StatusRequestEntityTooLarge, "too_large", "模板超过 2 MiB")
+			return
+		}
+		if !strings.Contains(body, hostsPlaceholder) {
+			fail(w, http.StatusBadRequest, "kickstart_missing_placeholder",
+				"kickstart 缺少 "+hostsPlaceholder+" 占位符，无法注入主机清单")
+			return
+		}
+		if err := os.WriteFile(k.Path, []byte(body), 0o644); err != nil {
+			fail(w, http.StatusInternalServerError, "internal", "保存模板失败: "+err.Error())
+			return
+		}
+	}
+
+	if err := s.store.UpdateKickstart(k.ID, name, pickRemark(req.Remark, k.Remark)); err != nil {
+		fail(w, http.StatusInternalServerError, "internal", "保存模板失败: "+err.Error())
+		return
+	}
+
+	out := s.decorateKickstart(k)
+	out.Name = name
+	out.Remark = pickRemark(req.Remark, k.Remark)
+	writeJSON(w, http.StatusOK, map[string]any{"kickstart": out})
+}
+
+func pickRemark(v *string, fallback string) string {
+	if v == nil {
+		return fallback
+	}
+	return strings.TrimSpace(*v)
 }
 
 // handleKickstartContent returns the template body for in-browser preview.

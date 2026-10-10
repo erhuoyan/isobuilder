@@ -27,6 +27,7 @@ const registerFormRef = ref<FormInst | null>(null);
 const registerForm = ref({
   path: '',
   name: '',
+  remark: '',
   arch: 'x86_64' as Api.IsoBuilder.Arch
 });
 
@@ -99,6 +100,7 @@ async function handleRegister() {
     source: 'path',
     path: registerForm.value.path.trim(),
     name: registerForm.value.name.trim() || undefined,
+    remark: registerForm.value.remark.trim() || undefined,
     arch: registerForm.value.arch
   });
 
@@ -108,7 +110,7 @@ async function handleRegister() {
 
   window.$message?.success('镜像已登记');
   registerShow.value = false;
-  registerForm.value = { path: '', name: '', arch: 'x86_64' };
+  registerForm.value = { path: '', name: '', remark: '', arch: 'x86_64' };
   await loadIsos();
 }
 
@@ -127,8 +129,8 @@ function renderStatus(row: Api.IsoBuilder.Iso) {
   );
 }
 
-function renderSha256(row: Api.IsoBuilder.Iso) {
-  if (!row.sha256) {
+function renderMd5(row: Api.IsoBuilder.Iso) {
+  if (!row.md5) {
     return h('span', { class: 'text-gray-400' }, EMPTY_VALUE);
   }
 
@@ -136,8 +138,8 @@ function renderSha256(row: Api.IsoBuilder.Iso) {
     NTooltip,
     { trigger: 'hover', keepAliveOnHover: true },
     {
-      trigger: () => h('code', { class: 'cursor-help font-mono text-12px' }, `${row.sha256.slice(0, 4)}…`),
-      default: () => h(CopyText, { text: row.sha256 })
+      trigger: () => h('code', { class: 'cursor-help font-mono text-12px' }, `${row.md5.slice(0, 8)}…`),
+      default: () => h(CopyText, { text: row.md5 })
     }
   );
 }
@@ -197,16 +199,17 @@ const columns: DataTableColumns<Api.IsoBuilder.Iso> = [
     }
   },
   {
-    key: 'sha256',
-    title: 'SHA256',
+    key: 'md5',
+    title: 'MD5',
     minWidth: 140,
-    render: renderSha256
+    render: renderMd5
   },
   {
-    key: 'path',
-    title: '路径',
-    minWidth: 200,
-    render: renderPath
+    key: 'remark',
+    title: '备注',
+    minWidth: 160,
+    ellipsis: { tooltip: true },
+    render: row => row.remark || h('span', { class: 'text-gray-400' }, EMPTY_VALUE)
   },
   {
     key: 'created_at',
@@ -324,6 +327,9 @@ onMounted(() => {
             </NFormItem>
             <NFormItem label="镜像名称" path="name">
               <NInput v-model:value="registerForm.name" placeholder="留空则取文件名" />
+            </NFormItem>
+            <NFormItem label="备注" path="remark">
+              <NInput v-model:value="registerForm.remark" placeholder="例如：京西机房 6.24 批次用" />
             </NFormItem>
             <NFormItem label="架构" path="arch">
               <NSelect v-model:value="registerForm.arch" :options="archOptions" />

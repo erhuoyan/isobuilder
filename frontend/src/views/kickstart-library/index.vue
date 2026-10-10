@@ -6,11 +6,13 @@ import {
   fetchDeleteKickstart,
   fetchGetKickstartContent,
   fetchGetKickstarts,
+  fetchUpdateKickstart,
   fetchUploadKickstart
 } from '@/service/api';
 import { getApiErrorCode } from '@/service/api/errors';
 import { kickstartArchOptions } from '@/constants/isobuilder';
 import { EMPTY_VALUE, formatBytes, formatDateTime } from '@/utils/format';
+import { useClipboard } from '@vueuse/core';
 
 const loading = ref(false);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
@@ -62,6 +64,74 @@ async function handlePreview(row: Api.IsoBuilder.Kickstart) {
   if (error || !data) return;
 
   previewContent.value = data.content;
+}
+
+/** 编辑抽屉的状态：编辑内置模板时正文只读，元数据可改 */
+const editShow = ref(false);
+const editSubmitting = ref(false);
+const editTarget = ref<Api.IsoBuilder.Kickstart | null>(null);
+const editForm = ref({ name: '', remark: '', content: '' });
+const editLoading = ref(false);
+const editContentTouched = ref(false);
+
+function handleEdit(row: Api.IsoBuilder.Kickstart) {
+  editTarget.value = row;
+  editForm.value = { name: row.name, remark: row.remark, content: '' };
+  editContentTouched.value = false;
+  editShow.value = true;
+  editLoading.value = true;
+
+  // 打开抽屉时拉一份当前正文作为编辑初值
+  fetchGetKickstartContent(row.id).then(({ data, error }) => {
+    editLoading.value = false;
+
+    if (error || !data) {
+      window.$message?.error('加载模板正文失败');
+      return;
+    }
+
+    editForm.value.content = data.content;
+  });
+}
+
+async function handleEditSubmit() {
+  if (!editTarget.value) return;
+
+  editSubmitting.value = true;
+
+  const payload: Api.IsoBuilder.KickstartUpdatePayload = {
+    name: editForm.value.name.trim() || undefined,
+    remark: editForm.value.remark
+  };
+
+  // 正文只在编辑器改动过时才提交，避免覆盖别人的修改
+  if (editContentTouched.value) {
+    payload.content = editForm.value.content;
+  }
+
+  const { data, error } = await fetchUpdateKickstart(editTarget.value.id, payload);
+
+  editSubmitting.value = false;
+
+  if (error || !data) return;
+
+  window.$message?.success('模板已更新');
+  editShow.value = false;
+  await loadKickstarts();
+}
+
+async function copyPreview() {
+  if (!previewContent.value) return;
+
+  const { copy, isSupported } = useClipboard({ legacy: true });
+
+  if (!isSupported.value) {
+    window.$message?.warning('当前浏览器不支持剪贴板，请手动复制。');
+    return;
+  }
+
+  await copy(previewContent.value);
+  window.$message?.success('已复制到剪贴板');
 }
 
 function handleFileChange(event: Event) {
@@ -164,22 +234,11 @@ const columns: DataTableColumns<Api.IsoBuilder.Kickstart> = [
       )
   },
   {
-    key: 'placeholders',
-    title: '占位符',
-    minWidth: 260,
-    render: row => {
-      if (!row.placeholders.length) {
-        return h('span', { class: 'text-gray-400' }, EMPTY_VALUE);
-      }
-
-      return h(
-        NSpace,
-        { size: 4, wrap: true },
-        {
-          default: () => row.placeholders.map(item => h(NTag, { key: item, size: 'small', bordered: false }, { default: () => item }))
-        }
-      );
-    }
+    key: 'remark',
+    title: '备注',
+    minWidth: 200,
+    ellipsis: { tooltip: true },
+    render: row => row.remark || h('span', { class: 'text-gray-400' }, EMPTY_VALUE)
   },
   {
     key: 'size_bytes',
@@ -231,6 +290,11 @@ const columns: DataTableColumns<Api.IsoBuilder.Kickstart> = [
             NButton,
             { size: 'small', text: true, type: 'primary', onClick: () => handlePreview(row) },
             { default: () => '预览' }
+          ),
+          h(
+            NButton,
+            { size: 'small', text: true, type: 'primary', onClick: () => handleEdit(row) },
+            { default: () => '编辑' }
           ),
           remove
         ]
@@ -289,13 +353,62 @@ onMounted(() => {
 
     <NDrawer v-model:show="previewShow" placement="right" width="min(100vw, 720px)">
       <NDrawerContent :title="`模板预览 · ${previewName}`" :native-scrollbar="false" closable>
-        <div class="flex flex-col gap-8px">
-          <CopyText :text="previewContent" label="正文" wrap />
-
-          <NSpin :show="previewLoading">
-            <pre class="m-0 min-h-200px whitespace-pre rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
-          </NSpin>
+        <NSpin :show="previewLoading">
+          <pre class="m-0 min-h-200px whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
+        </NSpin>
+        <div class="mt-8px flex justify-end">
+          <NButton size="small" :disabled="!previewContent" @click="copyPreview">
+            <template #icon>
+              <SvgIcon icon="mdi:content-copy" />
+            </template>
+            复制全文
+          </NButton>
         </div>
+      </NDrawerContent>
+    </NDrawer>
+
+    <NDrawer v-model:show="editShow" placement="right" width="min(100vw, 720px)">
+      <NDrawerContent :title="`编辑模板 · ${editTarget?.name ?? ''}`" :native-scrollbar="false" closable>
+        <NSpin :show="editLoading">
+          <div class="flex flex-col gap-16px">
+            <NForm label-placement="top" :show-require-mark="false">
+              <NFormItem label="名称">
+                <NInput v-model:value="editForm.name" :maxlength="80" />
+              </NFormItem>
+              <NFormItem label="备注">
+                <NInput v-model:value="editForm.remark" type="textarea" :rows="2" :maxlength="200" show-count />
+              </NFormItem>
+              <NFormItem label="模板正文">
+                <NInput
+                  v-if="editTarget?.builtin"
+                  :value="editForm.content"
+                  type="textarea"
+                  :rows="16"
+                  readonly
+                  class="font-mono"
+                />
+                <NInput
+                  v-else
+                  :value="editForm.content"
+                  type="textarea"
+                  :rows="16"
+                  class="font-mono"
+                  @update:value="v => { editForm.content = v; editContentTouched = true; }"
+                />
+              </NFormItem>
+            </NForm>
+            <NAlert v-if="editTarget?.builtin" type="info" :bordered="false">
+              内置模板正文不可编辑，但名称/备注可改。需要修改内容时复制一份上传为新模板。
+            </NAlert>
+          </div>
+        </NSpin>
+
+        <template #footer>
+          <NSpace justify="end">
+            <NButton @click="editShow = false">取消</NButton>
+            <NButton type="primary" :loading="editSubmitting" @click="handleEditSubmit">保存</NButton>
+          </NSpace>
+        </template>
       </NDrawerContent>
     </NDrawer>
 

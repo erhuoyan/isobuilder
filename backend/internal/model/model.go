@@ -61,6 +61,8 @@ type ISO struct {
 	Arch      string `json:"arch"`
 	SizeBytes int64  `json:"size_bytes"`
 	SHA256    string `json:"sha256"`
+	MD5       string `json:"md5"`
+	Remark    string `json:"remark"`
 	Status    string `json:"status"`
 	Source    string `json:"source"`
 	Path      string `json:"path"`
@@ -74,6 +76,7 @@ type Kickstart struct {
 	Name         string   `json:"name"`
 	Arch         string   `json:"arch"`
 	Builtin      bool     `json:"builtin"`
+	Remark       string   `json:"remark"`
 	Placeholders []string `json:"placeholders"`
 	SizeBytes    int64    `json:"size_bytes"`
 	Path         string   `json:"-"`
@@ -150,6 +153,7 @@ type Artifact struct {
 	Filename     string `json:"filename"`
 	SizeBytes    int64  `json:"size_bytes"`
 	SHA256       string `json:"sha256"`
+	MD5          string `json:"md5"`
 	Storage      string `json:"storage"`
 	StorageKey   string `json:"storage_key,omitempty"`
 	URL          string `json:"url"`

@@ -296,6 +296,7 @@ type registerRequest struct {
 	Source string `json:"source"` // "path" (default) | "s3"
 	Path   string `json:"path"`
 	Name   string `json:"name"`
+	Remark string `json:"remark"`
 	Arch   string `json:"arch"`
 
 	S3 *struct {
@@ -369,6 +370,7 @@ func (s *Server) registerFromPath(w http.ResponseWriter, req registerRequest) {
 		Name:      isoName(req.Name, filepath.Base(path)),
 		Filename:  filepath.Base(path),
 		Arch:      req.Arch,
+		Remark:    strings.TrimSpace(req.Remark),
 		SizeBytes: fi.Size(),
 		Status:    model.IsoHashing,
 		Source:    model.SourceRegistered,
@@ -449,6 +451,7 @@ func (s *Server) registerFromS3(w http.ResponseWriter, r *http.Request, req regi
 		Name:      isoName(req.Name, filename),
 		Filename:  filename,
 		Arch:      req.Arch,
+		Remark:    strings.TrimSpace(req.Remark),
 		Status:    model.IsoDownloading,
 		Source:    model.SourceS3,
 		Path:      filepath.Join(s.cfg.IsoDir, store.NewID()+"-"+filename),

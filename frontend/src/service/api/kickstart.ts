@@ -33,3 +33,14 @@ export function fetchGetKickstartContent(id: string) {
 export function fetchDeleteKickstart(id: string) {
   return request<null>({ url: `/api/kickstarts/${id}`, method: 'delete' });
 }
+
+
+/** 更新模板：元数据（name/remark）与可选的正文 content；字段省略表示不变 */
+export function fetchUpdateKickstart(id: string, payload: Api.IsoBuilder.KickstartUpdatePayload) {
+  return request<{ kickstart: Api.IsoBuilder.Kickstart }>({
+    url: `/api/kickstarts/${id}`,
+    method: 'put',
+    data: payload,
+    silentError: true
+  });
+}
