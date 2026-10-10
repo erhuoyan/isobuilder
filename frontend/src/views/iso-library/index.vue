@@ -289,7 +289,7 @@ onMounted(() => {
       :row-key="rowKey"
       :scroll-x="1290"
       size="medium"
-      :bordered="false"
+      bordered
       :single-line="false"
     >
       <template #empty>
