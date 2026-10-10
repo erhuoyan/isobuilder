@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
+import * as XLSX from 'xlsx';
+import { normalizeHeader, TEMPLATE_COLUMNS, TEMPLATE_HEADER_SET } from '@/constants/hosts-template';
 import { fetchValidateHosts } from '@/service/api';
 import { hostsFormatOptions } from '@/constants/isobuilder';
 
@@ -143,6 +145,230 @@ async function handleFileChange(event: Event) {
   }
 }
 
+/** ─── 表格导入（xlsx/csv）────────────────────────────────────────── */
+
+interface SpreadsheetRow {
+  [column: string]: string | number | undefined;
+}
+
+
+const tableInputRef = ref<HTMLInputElement | null>(null);
+const tableFile = ref<File | null>(null);
+const tableRows = ref<SpreadsheetRow[]>([]);
+const tableHeaders = ref<string[]>([]);
+const columnMapping = ref<Record<string, string>>({});
+const tableShow = ref(false);
+const tableParsing = ref(false);
+
+function triggerTableSelect() {
+  tableInputRef.value?.click();
+}
+
+/** bond 判定：mac1/mac2 同时映射到 → bond 模式；单 mac → 单口 */
+function detectNetworkMode(mapping: Record<string, string>) {
+  const fields = new Set(Object.values(mapping));
+  const hasBond = fields.has('mac1') && fields.has('mac2');
+  const hasSingle = fields.has('mac');
+  return hasBond ? 'bond' : hasSingle ? 'single' : 'unknown';
+}
+
+function cellText(row: SpreadsheetRow, column: string): string {
+  const v = row[column];
+  return v === undefined || v === null ? '' : String(v).trim();
+}
+
+/** 按标准表头取一行里的字段值（空单元格继承上一行非空值：同批次网关/掩码常留空） */
+function extractHost(rows: SpreadsheetRow[], index: number) {
+  const get = (field: string): string => {
+    if (!TEMPLATE_HEADER_SET.has(field)) return '';
+    return cellText(rows[index], field);
+  };
+
+  const inherit = (field: string): string => {
+    let v = get(field);
+    if (v) return v;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      v = cellText(rows[i], field);
+      if (v) return v;
+    }
+    return '';
+  };
+
+  return { get, inherit };
+}
+
+/** 解析表格文件 */
+async function handleTableFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+
+  if (!file) return;
+
+  tableFile.value = file;
+  tableParsing.value = true;
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<SpreadsheetRow>(sheet, { defval: '' });
+
+    if (!rows.length) {
+      window.$message?.error('表格没有数据行');
+      tableParsing.value = false;
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+    const normalized = new Map(headers.map(h => [normalizeHeader(h), h]));
+
+    const missing = TEMPLATE_COLUMNS.filter(col => !normalized.has(normalizeHeader(col)));
+    if (missing.length) {
+      window.$message?.error(
+        `表头不符合模板：缺少列 ${missing.join('、')}。实际表头：${headers.join('、')}。请下载模板按列名填写（大小写/空格不敏感）。`
+      );
+      tableParsing.value = false;
+      return;
+    }
+
+    // 把行数据按协议列重排：key = 归一化表头，值 = 原行对应单元格
+    const columnByNormalized = new Map(headers.map(h => [normalizeHeader(h), h]));
+    tableRows.value = rows.map(row => {
+      const rebased: SpreadsheetRow = {};
+      TEMPLATE_COLUMNS.forEach(col => {
+        const original = columnByNormalized.get(normalizeHeader(col));
+        rebased[col] = original ? row[original] : '';
+      });
+      // 非协议列原样保留（进 extra）
+      headers.forEach(h => {
+        if (!TEMPLATE_HEADER_SET.has(normalizeHeader(h))) {
+          rebased[h] = row[h];
+        }
+      });
+      return rebased;
+    });
+
+    tableHeaders.value = [...TEMPLATE_COLUMNS, ...headers.filter(h => !TEMPLATE_HEADER_SET.has(normalizeHeader(h)))];
+    tableShow.value = true;
+  } catch {
+    window.$message?.error('解析表格失败，请确认为 .xlsx 或 .csv 格式');
+  } finally {
+    tableParsing.value = false;
+  }
+}
+
+/** 映射确认 → 生成 YAML 写入编辑器 */
+function handleTableConfirm() {
+  const probe = extractHost(tableRows.value, 0);
+  const mode = probe.get('mac1') && probe.get('mac2') ? 'bond' : probe.get('mac') ? 'single' : 'unknown';
+
+  if (mode === 'unknown') {
+    window.$message?.error('表格里没有 mac 列（单口）也没有 mac1/mac2 列（bond），无法生成网络配置');
+    return;
+  }
+
+  const lines: string[] = ['hosts:'];
+
+  tableRows.value.forEach((_, index) => {
+    const { get, inherit } = extractHost(tableRows.value, index);
+
+    const sn = get('sn');
+    const hostname = get('hostname');
+    if (!sn && !hostname) return; // 全空行跳过
+
+    lines.push(`  - sn: ${sn || `AUTO-${index + 1}`}`);
+    lines.push(`    hostname: ${hostname || `node-${index + 1}`}`);
+
+    const password = get('root_password');
+    if (password) lines.push(`    root_password: ${password}`);
+
+    const disk = get('disk_target_size');
+    if (disk) lines.push(`    disk_target_size: ${disk}`);
+
+    const bmcIp = get('bmc_ip');
+    if (bmcIp) lines.push(`    bmc_ip: ${bmcIp}`);
+
+    lines.push('    network:');
+    lines.push(`      ip: ${get('ip') || inherit('ip')}`);
+
+    const netmask = get('netmask') || inherit('netmask');
+    const gateway = get('gateway') || inherit('gateway');
+    if (netmask) lines.push(`      netmask: ${netmask}`);
+    if (gateway) lines.push(`      gateway: ${gateway}`);
+
+    if (mode === 'bond') {
+      lines.push('      bond:');
+      lines.push('        mode: 4');
+      lines.push('        slaves:');
+      lines.push(`          - ${get('mac1')}`);
+      lines.push(`          - ${get('mac2')}`);
+    } else {
+      lines.push(`      mac: ${get('mac')}`);
+    }
+
+    const bmac = get('bmc_mac');
+    if (bmac) {
+      lines.push(`    bmc_mac: ${bmac}`);
+      const bnm = get('bmc_netmask');
+      const bgw = get('bmc_gateway');
+      if (bnm) lines.push(`    bmc_netmask: ${bnm}`);
+      if (bgw) lines.push(`    bmc_gateway: ${bgw}`);
+    }
+
+    // 非协议列进 extra（保留原始表头名，如 bmc_mac、location）
+    const extra: string[] = [];
+    tableHeaders.value.forEach(column => {
+      if (TEMPLATE_HEADER_SET.has(column)) return;
+      const v = cellText(tableRows.value[index], column);
+      if (v) extra.push(`    ${sanitizeKey(column)}: ${v}`);
+    });
+    if (extra.length) {
+      lines.push('    extra:');
+      lines.push(...extra);
+    }
+  });
+
+  format.value = 'yaml';
+  value.value = lines.join('\n') + '\n';
+  tableShow.value = false;
+  window.$message?.success(`已从表格生成 ${tableRows.value.length} 台主机的清单，请检查校验结果`);
+}
+
+function sanitizeKey(name: string): string {
+  const key = String(name).trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  return key || 'column';
+}
+
+function handleTableCancel() {
+  tableShow.value = false;
+  tableFile.value = null;
+  tableRows.value = [];
+  tableHeaders.value = [];
+  columnMapping.value = {};
+}
+
+function handleTemplateDownload() {
+  const data = [TEMPLATE_COLUMNS];
+  const sheet = XLSX.utils.aoa_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, '主机清单');
+  XLSX.writeFile(workbook, 'isobuilder-主机清单模板.xlsx');
+}
+
+
+/** 预览表：前 10 行、前 12 列 */
+const tablePreviewColumns = computed(() =>
+  tableHeaders.value.slice(0, 12).map(header => ({
+    key: header,
+    title: header,
+    minWidth: 120,
+    ellipsis: { tooltip: true }
+  }))
+);
+
+const tablePreviewRows = computed(() => tableRows.value.slice(0, 10));
+
 function handleClear() {
   value.value = '';
 }
@@ -169,6 +395,18 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
           </template>
           读入本地文件
         </NButton>
+        <NButton size="small" @click="triggerTableSelect">
+          <template #icon>
+            <SvgIcon icon="mdi:table-arrow-right" />
+          </template>
+          导入表格
+        </NButton>
+        <NButton size="small" @click="handleTemplateDownload">
+          <template #icon>
+            <SvgIcon icon="mdi:file-download-outline" />
+          </template>
+          下载模板
+        </NButton>
         <NButton size="small" :disabled="!hasContent" @click="handleClear">
           <template #icon>
             <SvgIcon icon="mdi:eraser" />
@@ -190,6 +428,14 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
       accept=".yaml,.yml,.json,.txt"
       class="hidden"
       @change="handleFileChange"
+    />
+
+    <input
+      ref="tableInputRef"
+      type="file"
+      accept=".xlsx,.xls,.csv"
+      class="hidden"
+      @change="handleTableFileChange"
     />
 
     <NInput
@@ -226,6 +472,32 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
     <NAlert v-else size="small" type="warning" :bordered="false">
       主机清单尚未校验。
     </NAlert>
+
+    <NDrawer v-model:show="tableShow" placement="right" width="min(100vw, 860px)">
+      <NDrawerContent :title="`表格导入 · ${tableFile?.name ?? ''}`" :native-scrollbar="false" closable>
+        <NAlert type="info" :bordered="false" class="mb-16px">
+          共解析出 {{ tableRows.length }} 行、{{ tableHeaders.length }} 列。
+          未出现在模板协议里的列（如 bmc_mac、location）会作为附加信息保留到主机记录。
+        </NAlert>
+
+        <div class="mb-8px text-13px text-gray-500">数据预览（前 10 行）：</div>
+        <NDataTable
+          size="small"
+          bordered
+          :max-height="240"
+          :columns="tablePreviewColumns"
+          :data="tablePreviewRows"
+          :row-key="(row: SpreadsheetRow) => tableRows.indexOf(row)"
+        />
+
+        <template #footer>
+          <NSpace justify="end">
+            <NButton @click="handleTableCancel">取消</NButton>
+            <NButton type="primary" :loading="tableParsing" @click="handleTableConfirm">生成主机清单</NButton>
+          </NSpace>
+        </template>
+      </NDrawerContent>
+    </NDrawer>
 
     <NList v-if="result && errorCount" bordered size="small">
       <NListItem v-for="(error, index) in result.errors" :key="`${error.index}-${error.field}-${index}`">
