@@ -17,7 +17,16 @@
 
 **明确不引入 K8s**（已对齐）：单 systemd 服务 + 子进程就是终态。
 
-## 二、已完成并验证的东西
+## 二、2026-10-09 晚间追加（信封化 + v2.2.0 迁移 + 模板编辑）
+
+- 后端响应信封化：全部 JSON 为 {code,message,data,details?}，业务错误 HTTP 200 + biz code，401 除外
+- 前端底版从 main 分支迁到官方 v2.2.0 release tarball（可复现），request 层回归 stock
+- 新增：模板备注字段与编辑（名称/备注/正文，内置模板正文只读）、镜像 MD5 与备注、
+  镜像库列调整（MD5 替代 SHA256、去路径列）、磁盘预检、表格 bordered、菜单清理
+- 数据库自动迁移：isos/artifacts/kickstarts 补列（启动时 ALTER，重复列自动跳过）
+- 验证：Go 18 项测试 + typecheck/build + 真机部署截图（/tmp/isobuilder-shots/2x）
+
+## 二-原、此前已完成并验证的东西
 
 ### 部署形态（裸机，主路径）
 - systemd：`/opt/isobuilder`（程序）+ `/var/lib/isobuilder`（数据）+ `/etc/isobuilder/env`
