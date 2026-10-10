@@ -86,11 +86,16 @@
 3. 本地起服务：cd backend && go run ./cmd/isobuilder（需 xorriso 等本机依赖）
 4. 界面：镜像库拉镜像 → 新建项目（YAML 校验实时报错）→ 构建（SSE 日志）→ 下载 URL
 
+5. **已入库的真实镜像**：openEuler-22.03-LTS-SP4-aarch64-dvd（3.4GB，从 OSS 拉取，ready）
+
 ## 四、还没做的事（按优先级）
 
-### P0 — 交付验收的最后一环（只有现场能做）
-- [ ] 用真实发行版 ISO（约 15GB）完整走一次构建（合成 ISO 只验证了流水线环节）
-- [ ] 实际引导装机：产物挂 BMC 虚拟光驱 / 写 Ventoy，确认机器自动装完
+### P0 — 交付验收进度
+
+- [x] **真实发行版 ISO 完整构建**（2026-10-10：openEuler 22.03 SP4 aarch64 3.4GB，从 OSS 拉取 → 构建 → 上传 OSS）
+- [x] **产物引导结构核对**：产物 grub.cfg 反向解包确认——Auto Install 为默认项、原厂菜单保留、
+      smmu 等内核参数逐字保留、kickstart 注入完整、El Torito UEFI 段与原版一致
+- [ ] **实际引导装机**（唯一剩余）：产物挂 BMC 虚拟光驱 / 写 Ventoy，确认机器自动装完
 
 ### P1 — 上生产前建议补
 - [ ] 认证：目前默认关。生产建议 /etc/isobuilder/env 设 ISOBUILDER_AUTH_TOKEN，
