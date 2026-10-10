@@ -102,6 +102,8 @@ chmod 0755 "$PREFIX/isobuilder"
 
 # ── 4. systemd ───────────────────────────────────────────────────────────────
 log "安装 systemd 单元"
+# 先停服务：运行中的二进制无法被覆盖（Text file busy 会让 cp 静默失败）
+systemctl stop isobuilder 2>/dev/null || true
 install -m 0644 "$(dirname "$0")/isobuilder.service" "$SERVICE"
 if [ ! -f "$CONF_DIR/env" ]; then
     install -m 0600 "$(dirname "$0")/env.example" "$CONF_DIR/env"

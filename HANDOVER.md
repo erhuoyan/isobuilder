@@ -17,7 +17,16 @@
 
 **明确不引入 K8s**（已对齐）：单 systemd 服务 + 子进程就是终态。
 
-## 二、2026-10-09 晚间追加（信封化 + v2.2.0 迁移 + 模板编辑 + 表格导入）
+## 二、2026-10-10 追加（真 ISO 全链路 + MD5）
+
+- 真实 openEuler 22.03 SP4 aarch64 ISO（3.4GB，S3 拉取）完整构建成功，
+  产物 MD5/SHA256 入库，OSS 预签名 URL 下载可用 —— 全链路闭环
+- 产物增加 MD5 字段（implantisomd5 输出捕获），基础镜像也算 MD5
+- 修复三个部署/数据 bug：CreateArtifact 占位符多写一个、artifacts.md5 列迁移、
+  install.sh 升级时 Text file busy（先 stop 再覆盖）
+- 表格导入主机清单（xlsx/csv，见 frontend/src/constants/hosts-template.ts 列协议）
+
+## 二-1、2026-10-09 晚间追加（信封化 + v2.2.0 迁移 + 模板编辑）
 
 - 主机清单表格导入：xlsx/csv（SheetJS），列协议固定（TEMPLATE_COLUMNS，见 constants/hosts-template.ts），
   表头归一化匹配（大小写/空格/下划线不敏感），空 cell 继承上一行非空值，

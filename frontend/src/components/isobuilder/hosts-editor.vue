@@ -307,15 +307,6 @@ function handleTableConfirm() {
       lines.push(`      mac: ${get('mac')}`);
     }
 
-    const bmac = get('bmc_mac');
-    if (bmac) {
-      lines.push(`    bmc_mac: ${bmac}`);
-      const bnm = get('bmc_netmask');
-      const bgw = get('bmc_gateway');
-      if (bnm) lines.push(`    bmc_netmask: ${bnm}`);
-      if (bgw) lines.push(`    bmc_gateway: ${bgw}`);
-    }
-
     // 非协议列进 extra（保留原始表头名，如 bmc_mac、location）
     const extra: string[] = [];
     tableHeaders.value.forEach(column => {
@@ -359,11 +350,12 @@ function handleTemplateDownload() {
 
 /** 预览表：前 10 行、前 12 列 */
 const tablePreviewColumns = computed(() =>
-  tableHeaders.value.slice(0, 12).map(header => ({
+  tableHeaders.value.map(header => ({
     key: header,
     title: header,
-    minWidth: 120,
-    ellipsis: { tooltip: true }
+    width: Math.max(90, Math.min(220, String(header).length * 14 + 24)),
+    render: (row: SpreadsheetRow) =>
+      h('span', { class: 'font-mono text-12px whitespace-nowrap' }, cellText(row, header))
   }))
 );
 

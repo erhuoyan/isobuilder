@@ -604,8 +604,8 @@ func (s *Store) CountActiveBuildsForProject(projectID string) (int, error) {
 // CreateArtifact inserts an artifact record.
 func (s *Store) CreateArtifact(a model.Artifact) error {
 	_, err := s.db.Exec(`INSERT INTO artifacts(id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at)
-	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.BuildID, a.Filename, a.SizeBytes, a.SHA256, a.Storage, a.StorageKey, a.URL,
+	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		a.ID, a.BuildID, a.Filename, a.SizeBytes, a.SHA256, a.MD5, a.Storage, a.StorageKey, a.URL,
 		a.URLExpiresAt, a.LocalPath, a.CreatedAt)
 	return err
 }
