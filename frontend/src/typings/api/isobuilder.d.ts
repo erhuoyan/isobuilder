@@ -197,6 +197,10 @@ declare namespace Api {
       sn: string;
       hostname: string;
       ip: string;
+      /** empty when the host has no gateway configured */
+      gateway: string;
+      /** 0 when disk_target_size is not configured */
+      disk_gb: number;
       network_mode: NetworkMode;
       mac_count: number;
       bmc_ip: string;

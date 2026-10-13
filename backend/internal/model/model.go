@@ -88,6 +88,8 @@ type HostSummary struct {
 	SN          string `json:"sn"`
 	Hostname    string `json:"hostname"`
 	IP          string `json:"ip"`
+	Gateway     string `json:"gateway"`
+	DiskGB      int    `json:"disk_gb"`
 	NetworkMode string `json:"network_mode"`
 	MACCount    int    `json:"mac_count"`
 	BMCIP       string `json:"bmc_ip"`

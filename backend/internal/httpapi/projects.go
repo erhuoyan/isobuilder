@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -127,7 +128,46 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "internal", "删除项目失败: "+err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	// Success must carry the envelope too: the admin SPA treats any body-less
+	// response (204) as a backend failure even when the delete happened.
+	writeJSON(w, http.StatusOK, map[string]any{})
+}
+
+// ResummarizeProjects re-derives every project's hosts summary from the stored
+// raw inventory. The summary is a snapshot produced by the validator version
+// that saved the project: new summary fields (gateway, disk_gb, …) only appear
+// in already-created projects after a re-validation. It runs at startup and
+// skips inventories the current validator rejects, so a rule change can never
+// hide data that was valid when it was saved.
+func (s *Server) ResummarizeProjects() {
+	projects, err := s.store.ListProjects()
+	if err != nil {
+		s.log.Error("回填主机摘要失败：查询项目", "err", err)
+		return
+	}
+	updated := 0
+	for _, p := range projects {
+		if strings.TrimSpace(p.HostsRaw) == "" {
+			continue
+		}
+		res := hosts.Parse(p.HostsRaw, p.HostsFormat)
+		if !res.OK {
+			continue
+		}
+		before, _ := json.Marshal(p.HostsSummary)
+		after, _ := json.Marshal(res.Summary)
+		if res.Count == p.HostsCount && string(before) == string(after) {
+			continue
+		}
+		if err := s.store.UpdateProjectSummary(p.ID, res.Count, res.Summary); err != nil {
+			s.log.Error("回填主机摘要失败", "project", p.ID, "err", err)
+			continue
+		}
+		updated++
+	}
+	if updated > 0 {
+		s.log.Info("已按当前校验器回填主机摘要", "count", updated)
+	}
 }
 
 // handleValidateHosts validates an inventory without persisting anything. The

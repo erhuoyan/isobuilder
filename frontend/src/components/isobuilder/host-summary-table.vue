@@ -27,6 +27,7 @@ const columns: DataTableColumns<Api.IsoBuilder.HostSummary> = [
   { key: 'sn', title: 'SN', minWidth: 150, render: row => mono(row.sn) },
   { key: 'hostname', title: 'hostname', minWidth: 130, render: row => mono(row.hostname) },
   { key: 'ip', title: 'IP', minWidth: 130, render: row => mono(row.ip) },
+  { key: 'gateway', title: '网关', minWidth: 120, render: row => mono(row.gateway) },
   {
     key: 'network_mode',
     title: '网络模式',
@@ -39,7 +40,7 @@ const columns: DataTableColumns<Api.IsoBuilder.HostSummary> = [
       )
   },
   { key: 'mac_count', title: 'MAC 数', width: 90, render: row => String(row.mac_count ?? 0) },
-  { key: 'bmc_ip', title: 'BMC IP', minWidth: 130, render: row => mono(row.bmc_ip) }
+  { key: 'disk_gb', title: '磁盘 GB', width: 90, render: row => (row.disk_gb ? String(row.disk_gb) : '—') }
 ];
 
 /** highlight the rows which have validation errors */

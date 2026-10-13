@@ -238,6 +238,42 @@ func TestValidateHosts(t *testing.T) {
 	}
 }
 
+// TestValidateHostsSummaryFields pins the summary contract the admin SPA renders:
+// each row must carry the gateway and disk size the operator configured, with
+// empty/zero meaning "not configured". The wizard swapped its BMC column for
+// these, so a regression silently breaks the preview tables.
+func TestValidateHostsSummaryFields(t *testing.T) {
+	ts, _ := newTestServer(t)
+	defer ts.Close()
+
+	resp := postJSON(t, ts.URL+"/api/validate/hosts", map[string]any{"content": validHosts, "format": "auto"})
+	var res hosts.Result
+	decode(t, resp, &res)
+	if !res.OK || len(res.Summary) != 1 {
+		t.Fatalf("expected one valid host, got ok=%v summary=%v errors=%v", res.OK, res.Summary, res.Errors)
+	}
+	row := res.Summary[0]
+	if row.Gateway != "172.16.0.1" {
+		t.Fatalf("gateway = %q, want 172.16.0.1", row.Gateway)
+	}
+	if row.DiskGB != 480 {
+		t.Fatalf("disk_gb = %d, want 480", row.DiskGB)
+	}
+
+	resp = postJSON(t, ts.URL+"/api/validate/hosts", map[string]any{"content": `hosts:
+- sn: S1
+  hostname: h1
+  network: {ip: 1.1.1.1, netmask: 255.255.255.0, mac: "00:11:22:33:44:55"}
+`, "format": "auto"})
+	decode(t, resp, &res)
+	if !res.OK || len(res.Summary) != 1 {
+		t.Fatalf("expected one valid host, got ok=%v errors=%v", res.OK, res.Errors)
+	}
+	if row := res.Summary[0]; row.Gateway != "" || row.DiskGB != 0 {
+		t.Fatalf("unconfigured host must report empty gateway and zero disk_gb, got %q/%d", row.Gateway, row.DiskGB)
+	}
+}
+
 // TestRegisterUnreadableFileFailsFast guards the operator trap of copying an ISO
 // in as root: the file is unreadable for the service account, and the failure
 // must be reported at registration with the actual fix, not minutes later as a

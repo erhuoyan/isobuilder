@@ -196,6 +196,8 @@ func validateHost(h map[string]any, v *validator, seenSN, seenHostname map[strin
 	if size, ok := h["disk_target_size"]; ok {
 		if n, isInt := integer(size); !isInt || n <= 0 {
 			v.add("disk_target_size", "disk_target_size 必须是正整数（GB）")
+		} else {
+			s.DiskGB = n
 		}
 	}
 	if bmc := strings.TrimSpace(text(h, "bmc_ip")); bmc != "" && bmc != "<nil>" {
@@ -307,6 +309,9 @@ func validateNetwork(h map[string]any, v *validator, s *model.HostSummary) {
 
 	if gwStr := strings.TrimSpace(text(n, "gateway")); gwStr != "" && gwStr != "<nil>" {
 		gw := net.ParseIP(gwStr)
+		if gw != nil && gw.To4() != nil {
+			s.Gateway = gwStr
+		}
 		switch {
 		case gw == nil || gw.To4() == nil:
 			v.add("network.gateway", "network.gateway %q 不是合法 IPv4 地址", gwStr)

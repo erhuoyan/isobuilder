@@ -1,0 +1,41 @@
+[Unit]
+Description=ISO Builder — 自动装机 ISO 构建平台
+Documentation=file:/opt/isobuilder/README.md
+After=network-online.target
+Wants=network-online.target
+# 端口被占用之类的启动失败不要每 3 秒重启一次，给出明确失败状态
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# 以 root 运行：部署最简单，手工丢进数据目录的 ISO 不存在属主/权限问题。
+# 它只写 /var/lib/isobuilder，不做别的系统改动；需要收权时加两行即可：
+#   User=isobuilder / Group=isobuilder   （并 chown -R isobuilder:isobuilder /var/lib/isobuilder）
+
+# 环境变量只是「首次启动的默认值」。对象存储、并发数等都能在 Web 的
+# 「系统配置」里改，改完即生效，不需要动这个文件。
+EnvironmentFile=-/etc/isobuilder/env
+Environment=ISOBUILDER_ADDR=:8080
+Environment=ISOBUILDER_DATA_DIR=/var/lib/isobuilder
+Environment=ISOBUILDER_WEB_DIR=/opt/isobuilder/web
+Environment=ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
+
+ExecStart=/opt/isobuilder/isobuilder
+Restart=on-failure
+RestartSec=3
+
+# 构建要落 2×ISO 的临时空间；/var/lib/isobuilder 需要足够容量
+LimitNOFILE=65535
+# ISO 重打包是 IO 密集型，必要时降低优先级，避免影响同机业务
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=5
+
+# 子进程（xorriso 等）不允许通过 setuid 提权；/tmp 自带私有实例
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

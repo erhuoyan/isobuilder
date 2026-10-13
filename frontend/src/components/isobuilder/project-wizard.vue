@@ -5,27 +5,13 @@ import {
   fetchGetIsos,
   fetchGetKickstartContent,
   fetchGetKickstarts,
-  fetchGetProject,
-  fetchImportProject,
-  fetchUpdateProject
+  fetchImportProject
 } from '@/service/api';
 import { getApiErrorCode, getApiErrorMessage } from '@/service/api/errors';
 import { archOptions, isoSourceRecord } from '@/constants/isobuilder';
 import { useRouterPush } from '@/hooks/common/router';
 import { useAppStore } from '@/store/modules/app';
 import { formatBytes } from '@/utils/format';
-
-interface Props {
-  /** the id of the project to edit, a new project is created when it is omitted */
-  projectId?: string;
-}
-
-const props = defineProps<Props>();
-
-const emit = defineEmits<{
-  /** the project could not be loaded, a removed id for example */
-  'load-error': [error: unknown];
-}>();
 
 const { routerPushByKey } = useRouterPush();
 const appStore = useAppStore();
@@ -43,13 +29,11 @@ const IMPORT_EXTENSIONS = ['.zip', '.tar.gz', '.tgz', '.tar'];
 /** the backend rejects the project packages bigger than 64 MiB */
 const IMPORT_MAX_BYTES = 64 * 1024 * 1024;
 
-const isEditing = computed(() => Boolean(props.projectId));
 const currentStep = ref(0);
 const currentStepInfo = computed(() => steps[currentStep.value] || steps[0]);
 
 const drawerWidth = computed(() => (appStore.isMobile ? '100%' : 720));
 
-const loadingProject = ref(false);
 const saving = ref(false);
 
 const form = ref({
@@ -70,6 +54,9 @@ const isos = ref<Api.IsoBuilder.Iso[]>([]);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
 const loadingIsos = ref(false);
 const loadingKickstarts = ref(false);
+
+/** the first render waits for the iso and kickstart catalogues */
+const spinLoading = computed(() => loadingIsos.value || loadingKickstarts.value);
 const showAllArch = ref(false);
 
 const selectedIso = computed(() => isos.value.find(iso => iso.id === form.value.iso_id) || null);
@@ -196,31 +183,6 @@ async function loadKickstarts() {
   if (!error) kickstarts.value = data.kickstarts;
 }
 
-async function loadProject(id: string) {
-  loadingProject.value = true;
-  const { data, error } = await fetchGetProject(id);
-  loadingProject.value = false;
-
-  if (error) {
-    emit('load-error', error);
-    return;
-  }
-
-  const project = data.project;
-
-  form.value = {
-    name: project.name,
-    description: project.description,
-    arch: project.arch,
-    iso_id: project.iso_id,
-    kickstart_id: project.kickstart_id,
-    iso_label: project.iso_label,
-    output_name: project.output_name
-  };
-  hostsRaw.value = project.hosts_raw;
-  hostsFormat.value = project.hosts_format;
-}
-
 async function handleSave() {
   if (!canSave.value) return;
 
@@ -238,15 +200,13 @@ async function handleSave() {
     hosts_format: hostsFormat.value
   };
 
-  const { data, error } = props.projectId
-    ? await fetchUpdateProject(props.projectId, payload)
-    : await fetchCreateProject(payload);
+  const { data, error } = await fetchCreateProject(payload);
 
   saving.value = false;
 
   if (error) return;
 
-  window.$message?.success(isEditing.value ? '项目已保存' : '项目已创建');
+  window.$message?.success('项目已创建');
   routerPushByKey('project-detail', { params: { id: data.project.id } });
 }
 
@@ -392,13 +352,11 @@ function goToImportedProject() {
 
 onMounted(async () => {
   await Promise.all([loadIsos(), loadKickstarts()]);
-
-  if (props.projectId) await loadProject(props.projectId);
 });
 </script>
 
 <template>
-  <NSpin :show="loadingProject">
+  <NSpin :show="spinLoading">
     <div class="flex flex-col gap-16px">
       <div class="flex flex-wrap items-center justify-between gap-12px">
         <div>
@@ -639,7 +597,7 @@ onMounted(async () => {
           <template #icon>
             <SvgIcon icon="mdi:content-save-outline" />
           </template>
-          {{ isEditing ? '保存修改' : '创建项目' }}
+          创建项目
         </NButton>
       </div>
     </div>

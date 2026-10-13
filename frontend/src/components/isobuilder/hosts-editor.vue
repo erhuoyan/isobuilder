@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import * as XLSX from 'xlsx';
-import { normalizeHeader, TEMPLATE_COLUMNS, TEMPLATE_HEADER_SET } from '@/constants/hosts-template';
+import { PREVIEW_COLUMN_SET, PREVIEW_COLUMNS, TEMPLATE_COLUMNS, TEMPLATE_HEADER_SET } from '@/constants/hosts-template';
 import { fetchValidateHosts } from '@/service/api';
 import { hostsFormatOptions } from '@/constants/isobuilder';
 
@@ -221,35 +221,35 @@ async function handleTableFileChange(event: Event) {
     }
 
     const headers = Object.keys(rows[0]);
-    const normalized = new Map(headers.map(h => [normalizeHeader(h), h]));
+    // 协议表头按模板原样严格匹配，区分大小写，仅容忍前后空格
+    const originals = new Map(headers.map(header => [header.trim(), header]));
 
-    const missing = TEMPLATE_COLUMNS.filter(col => !normalized.has(normalizeHeader(col)));
+    const missing = TEMPLATE_COLUMNS.filter(col => !originals.has(col));
     if (missing.length) {
       window.$message?.error(
-        `表头不符合模板：缺少列 ${missing.join('、')}。实际表头：${headers.join('、')}。请下载模板按列名填写（大小写/空格不敏感）。`
+        `表头不符合模板：缺少列 ${missing.join('、')}。实际表头：${headers.join('、')}。请下载模板，列名按模板原样填写（区分大小写）。`
       );
       tableParsing.value = false;
       return;
     }
 
-    // 把行数据按协议列重排：key = 归一化表头，值 = 原行对应单元格
-    const columnByNormalized = new Map(headers.map(h => [normalizeHeader(h), h]));
+    // 把行数据按协议列重排：key = 协议表头，值 = 原行对应单元格
     tableRows.value = rows.map(row => {
       const rebased: SpreadsheetRow = {};
       TEMPLATE_COLUMNS.forEach(col => {
-        const original = columnByNormalized.get(normalizeHeader(col));
-        rebased[col] = original ? row[original] : '';
+        const original = originals.get(col);
+        rebased[col] = original === undefined ? '' : row[original];
       });
       // 非协议列原样保留（进 extra）
-      headers.forEach(h => {
-        if (!TEMPLATE_HEADER_SET.has(normalizeHeader(h))) {
-          rebased[h] = row[h];
+      headers.forEach(header => {
+        if (!TEMPLATE_HEADER_SET.has(header.trim())) {
+          rebased[header] = row[header];
         }
       });
       return rebased;
     });
 
-    tableHeaders.value = [...TEMPLATE_COLUMNS, ...headers.filter(h => !TEMPLATE_HEADER_SET.has(normalizeHeader(h)))];
+    tableHeaders.value = [...TEMPLATE_COLUMNS, ...headers.filter(header => !TEMPLATE_HEADER_SET.has(header.trim()))];
     tableShow.value = true;
   } catch {
     window.$message?.error('解析表格失败，请确认为 .xlsx 或 .csv 格式');
@@ -280,14 +280,12 @@ function handleTableConfirm() {
     lines.push(`  - sn: ${sn || `AUTO-${index + 1}`}`);
     lines.push(`    hostname: ${hostname || `node-${index + 1}`}`);
 
+    // YAML 双引号风格转义：兼容密码里的 : # " \ 等字符，避免破坏清单结构
     const password = get('root_password');
-    if (password) lines.push(`    root_password: ${password}`);
+    if (password) lines.push(`    root_password: ${yamlQuote(password)}`);
 
     const disk = get('disk_target_size');
     if (disk) lines.push(`    disk_target_size: ${disk}`);
-
-    const bmcIp = get('bmc_ip');
-    if (bmcIp) lines.push(`    bmc_ip: ${bmcIp}`);
 
     lines.push('    network:');
     lines.push(`      ip: ${get('ip') || inherit('ip')}`);
@@ -307,17 +305,6 @@ function handleTableConfirm() {
       lines.push(`      mac: ${get('mac')}`);
     }
 
-    // 非协议列进 extra（保留原始表头名，如 bmc_mac、location）
-    const extra: string[] = [];
-    tableHeaders.value.forEach(column => {
-      if (TEMPLATE_HEADER_SET.has(column)) return;
-      const v = cellText(tableRows.value[index], column);
-      if (v) extra.push(`    ${sanitizeKey(column)}: ${v}`);
-    });
-    if (extra.length) {
-      lines.push('    extra:');
-      lines.push(...extra);
-    }
   });
 
   format.value = 'yaml';
@@ -326,9 +313,9 @@ function handleTableConfirm() {
   window.$message?.success(`已从表格生成 ${tableRows.value.length} 台主机的清单，请检查校验结果`);
 }
 
-function sanitizeKey(name: string): string {
-  const key = String(name).trim().toLowerCase().replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
-  return key || 'column';
+/** quote one string scalar as a YAML double-quoted token */
+function yamlQuote(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }
 
 function handleTableCancel() {
@@ -348,18 +335,50 @@ function handleTemplateDownload() {
 }
 
 
-/** 预览表：前 10 行、前 12 列 */
+/**
+ * 与生成 YAML 时一致的下继承字段：同批次共享值（网段、网关）常只在首行填写
+ * 或做纵向合并。预览必须展示继承后的值，与最终生成的清单保持同一份事实。
+ */
+const INHERITED_PREVIEW_FIELDS = new Set(['ip', 'netmask', 'gateway']);
+
+/** 不参与装机、也不写入清单的列（协议内未用的台账列 + 协议外的附加列） */
+const droppedColumns = computed(() => tableHeaders.value.filter(column => !PREVIEW_COLUMN_SET.has(column)));
+
+const droppedColumnsText = computed(() => (droppedColumns.value.length ? `：${droppedColumns.value.join('、')}` : ''));
+
+/** 预览表：前 10 行，仅展示装机使用的列，宽度按内容计算，超出部分横向滚动 */
 const tablePreviewColumns = computed(() =>
-  tableHeaders.value.map(header => ({
-    key: header,
-    title: header,
-    width: Math.max(90, Math.min(220, String(header).length * 14 + 24)),
-    render: (row: SpreadsheetRow) =>
-      h('span', { class: 'font-mono text-12px whitespace-nowrap' }, cellText(row, header))
-  }))
+  PREVIEW_COLUMNS.map(header => {
+    const widest = tablePreviewRows.value.reduce(
+      (max, row) => Math.max(max, cellText(row, header).length),
+      String(header).length
+    );
+    const width = Math.max(96, Math.min(240, widest * 8 + 28));
+    return {
+      key: header,
+      title: header,
+      width,
+      render: (row: SpreadsheetRow) =>
+        h('span', { class: 'font-mono text-12px whitespace-nowrap' }, cellText(row, header))
+    };
+  })
 );
 
-const tablePreviewRows = computed(() => tableRows.value.slice(0, 10));
+/** 内容总宽超出容器时开启横向滚动，列不再被压缩重叠 */
+const previewScrollX = computed(() =>
+  tablePreviewColumns.value.reduce((total, col) => total + col.width, 32)
+);
+
+const tablePreviewRows = computed(() =>
+  tableRows.value.slice(0, 10).map((row, index) => {
+    const { get, inherit } = extractHost(tableRows.value, index);
+    const display: SpreadsheetRow = { ...row };
+    INHERITED_PREVIEW_FIELDS.forEach(field => {
+      if (!get(field)) display[field] = inherit(field);
+    });
+    return display;
+  })
+);
 
 function handleClear() {
   value.value = '';
@@ -465,11 +484,11 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
       主机清单尚未校验。
     </NAlert>
 
-    <NDrawer v-model:show="tableShow" placement="right" width="min(100vw, 860px)">
+    <NDrawer v-model:show="tableShow" placement="right" width="min(100vw, 1440px)">
       <NDrawerContent :title="`表格导入 · ${tableFile?.name ?? ''}`" :native-scrollbar="false" closable>
         <NAlert type="info" :bordered="false" class="mb-16px">
-          共解析出 {{ tableRows.length }} 行、{{ tableHeaders.length }} 列。
-          未出现在模板协议里的列（如 bmc_mac、location）会作为附加信息保留到主机记录。
+          共解析出 {{ tableRows.length }} 行、{{ tableHeaders.length }} 列。预览仅展示装机使用的列；
+          其余{{ droppedColumnsText }} 不参与装机，不会写入主机清单。
         </NAlert>
 
         <div class="mb-8px text-13px text-gray-500">数据预览（前 10 行）：</div>
@@ -477,9 +496,10 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
           size="small"
           bordered
           :max-height="240"
+          :scroll-x="previewScrollX"
           :columns="tablePreviewColumns"
           :data="tablePreviewRows"
-          :row-key="(row: SpreadsheetRow) => tableRows.indexOf(row)"
+          :row-key="(row: SpreadsheetRow) => tablePreviewRows.indexOf(row)"
         />
 
         <template #footer>

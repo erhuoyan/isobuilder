@@ -229,7 +229,7 @@ func (s *Server) handleDeleteKickstart(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // RegisterBuiltinKickstarts imports the templates baked into the image on first

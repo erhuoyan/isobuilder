@@ -258,7 +258,7 @@ func (s *Server) handleCancelUpload(w http.ResponseWriter, r *http.Request) {
 	s.uploads.remove(id)
 	_ = os.Remove(u.Path)
 	_ = s.store.DeleteISO(u.IsoID)
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // hashISO computes the artifact checksum of a stored base image. Hashing is
@@ -580,7 +580,7 @@ func (s *Server) handleDeleteISO(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "internal", err.Error())
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // allowedISOPath restricts registration to the managed data directory, so the

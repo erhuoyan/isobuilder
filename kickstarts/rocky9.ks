@@ -205,6 +205,7 @@ if bond:
     cidr = f"{ip}/{netmask_to_cidr(netmask)}"
     dns_str = ';'.join(dns_list) + ';' if dns_list else ''
 
+    gw_line = f"gateway={gateway}\n" if gateway else ""
     bond_cfg = f"""[connection]
 id=bond0
 uuid={uuid.uuid4()}
@@ -213,8 +214,7 @@ interface-name=bond0
 
 [ipv4]
 address1={cidr}
-gateway={gateway}
-dns={dns_str}
+{gw_line}dns={dns_str}
 method=manual
 
 [bond]

@@ -73,6 +73,8 @@
   "hosts_count": 3,                 // 校验通过的主机台数
   "hosts_summary": [                // 解析结果摘要，顺序与 hosts_raw 一致
     { "sn": "YS2B60105814", "hostname": "perf001", "ip": "172.100.7.1",
+      "gateway": "172.100.7.254",   // 未配置网关时为空串
+      "disk_gb": 480,               // 未配置 disk_target_size 时为 0
       "network_mode": "single",     // "single" | "bond"
       "mac_count": 1, "bmc_ip": "10.126.1.30" }
   ],

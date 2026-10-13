@@ -228,9 +228,10 @@ BONDING_OPTS="mode={mode} miimon={miimon} lacp_rate={lacp_rate} xmit_hash_policy
 BOOTPROTO=static
 IPADDR={ip}
 NETMASK={netmask}
-GATEWAY={gateway}
 ONBOOT=yes
 """
+    if gateway:
+        bond_cfg += f"GATEWAY={gateway}\n"
     if dns_list:
         for i, dns in enumerate(dns_list, 1):
             bond_cfg += f"DNS{i}={dns}\n"
@@ -280,9 +281,10 @@ TYPE=Ethernet
 BOOTPROTO=static
 IPADDR={ip}
 NETMASK={netmask}
-GATEWAY={gateway}
 ONBOOT=yes
 """
+    if gateway:
+        cfg += f"GATEWAY={gateway}\n"
     if dns_list:
         for i, dns in enumerate(dns_list, 1):
             cfg += f"DNS{i}={dns}\n"
@@ -306,9 +308,10 @@ TYPE=Ethernet
 BOOTPROTO=static
 IPADDR={ip}
 NETMASK={netmask}
-GATEWAY={gateway}
 ONBOOT=yes
 """
+    if gateway:
+        cfg += f"GATEWAY={gateway}\n"
     if dns_list:
         for i, dns in enumerate(dns_list, 1):
             cfg += f"DNS{i}={dns}\n"

@@ -51,6 +51,7 @@ func main() {
 
 	api := httpapi.New(cfg, st, manager, blob, logger)
 	api.RegisterBuiltinKickstarts()
+	api.ResummarizeProjects()
 
 	// A queued build cannot survive a restart: its process is gone. The store
 	// marks those rows failed on open, so nothing is silently stuck.

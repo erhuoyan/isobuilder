@@ -401,6 +401,18 @@ func (s *Store) SaveProject(p model.Project, insert bool) error {
 	return err
 }
 
+// UpdateProjectSummary refreshes only hosts_count/hosts_summary. It exists for
+// the startup backfill and deliberately leaves updated_at untouched: a derived
+// data refresh is not a user edit and must not re-order the project list.
+func (s *Store) UpdateProjectSummary(id string, count int, summary []model.HostSummary) error {
+	body, err := json.Marshal(summary)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE projects SET hosts_count=?, hosts_summary=? WHERE id=?`, count, string(body), id)
+	return err
+}
+
 // DeleteProject removes a project together with its build history.
 func (s *Store) DeleteProject(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM builds WHERE project_id=?`, id); err != nil {
