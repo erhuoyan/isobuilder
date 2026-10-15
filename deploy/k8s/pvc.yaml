@@ -1,0 +1,27 @@
+# isobuilder 数据卷：由 StorageClass 动态供给，无需手工创建 PV。
+#
+#   kubectl -n isobuilder apply -f deploy/k8s/pvc.yaml
+#
+# provisioner（kube-system/nfs-client-provisioner，k8s-sigs.io/nfs-subdir-external-provisioner）
+# 会在 NFS 的 /data/nfs-provisioner/ 下自动创建本 PVC 专属子目录并挂载，
+# 多个服务各自声明自己的 PVC，互不干扰——不需要共享一个卷再用 subPath 切。
+#
+# ⚠️ 该 StorageClass 的 reclaimPolicy 是 Delete，且 provisioner 未启用
+#    archiveOnDelete：**删除本 PVC 会真删 NFS 上对应子目录的数据**。
+#    升级应用只换镜像 tag，绝不要删 PVC。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: isobuilder-data
+  namespace: isobuilder
+  labels:
+    app.kubernetes.io/name: isobuilder
+spec:
+  accessModes:
+    - ReadWriteMany          # NFS 支持多节点挂载；本服务单副本，RWX 是为将来留余地
+  storageClassName: managed-nfs-storage
+  resources:
+    requests:
+      # NFS 不按此限额，真实容量由 NFS 服务器磁盘决定；写大些免得扩容时重建 PVC。
+      # 容量规划：基础镜像总量 + (最大 ISO × 2 × 并发构建数)。
+      storage: 500Gi

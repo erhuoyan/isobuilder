@@ -24,16 +24,13 @@ spec:
       labels:
         app.kubernetes.io/name: isobuilder
     spec:
-      # NFS 的 subPath 挂载要求目标目录已存在，否则 Pod 起不来。
-      # 先整卷挂一次，创建本服务的子目录，主容器再用 subPath 挂进去。
-      initContainers:
-        - name: ensure-data-dir
-          image: hub-pub.jdcloud.com/iaas-jf/isobuilder:0.1.10-d1723e7-20261015-235151
-          imagePullPolicy: IfNotPresent
-          command: ["/bin/sh", "-c", "mkdir -p /mnt/nfs/isobuilder"]
-          volumeMounts:
-            - name: nfs
-              mountPath: /mnt/nfs
+      # 拉取 hub-pub.jdcloud.com 的镜像需要凭据（集群节点未登录该仓库）。
+      # 创建：kubectl -n isobuilder create secret docker-registry jd-registry \
+      #          --docker-server=hub-pub.jdcloud.com --docker-username=<user> --docker-password=<pass>
+      imagePullSecrets:
+        - name: jd-registry
+      # 收到 SIGTERM 后 CancelAll + 优雅关停；构建本身耗时长，给足退出窗口。
+      terminationGracePeriodSeconds: 60
       containers:
         - name: isobuilder
           # 镜像 tag 形如 <版本号>-<commit>-<时间>，由 deploy/build-image.sh 生成。
@@ -68,7 +65,6 @@ spec:
           volumeMounts:
             - name: nfs
               mountPath: /data
-              subPath: isobuilder    # 落到 NFS 的 /data/nfs-provisioner/isobuilder
           readinessProbe:
             httpGet:
               path: /api/health
@@ -98,9 +94,10 @@ spec:
             # NFS 以 no_root_squash 导出，root 可直接写卷；ISO 流水线也按 root 预期。
             runAsUser: 0
             allowPrivilegeEscalation: false
-          # 收到 SIGTERM 后 CancelAll + 优雅关停；构建本身耗时长，给足退出窗口。
-          terminationGracePeriodSeconds: 60
       volumes:
+        # 卷由 StorageClass managed-nfs-storage 动态供给：
+        # provisioner 自动在 NFS 的 /data/nfs-provisioner 下建独立子目录，
+        # 因此不需要手工 PV、不需要 subPath、也不需要 initContainer 建目录。
         - name: nfs
           persistentVolumeClaim:
-            claimName: nfs-shared
+            claimName: isobuilder-data

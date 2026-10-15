@@ -84,22 +84,22 @@ docker compose up -d --build
 
 ### 3. Kubernetes 部署
 
-单副本 Pod + 云 PostgreSQL + 共享 NFS 卷；完整手册见 [`deploy/k8s/README.md`](deploy/k8s/README.md)。
+单副本 Pod + 云 PostgreSQL + NFS 动态供给卷；完整手册见 [`deploy/k8s/README.md`](deploy/k8s/README.md)。
 
 ```bash
 # 交叉构建 amd64 镜像（Apple Silicon 亦可），tag = <版本号>-<commit>-<时间>
-REGISTRY=registry.example.com/team ./deploy/build-image.sh 0.1.0 --push
+REGISTRY=hub-pub.jdcloud.com/iaas-jf ./deploy/build-image.sh 0.1.10 --push
 
 kubectl create namespace isobuilder
 # 按 deploy/k8s/secret.example.yaml 填好 RDS 连接串
 kubectl -n isobuilder apply -f deploy/k8s/secret.yaml
-kubectl -n isobuilder apply -f deploy/k8s/pv-pvc.yaml
+kubectl -n isobuilder apply -f deploy/k8s/pvc.yaml
 kubectl -n isobuilder apply -f deploy/k8s/deployment.yaml
 kubectl -n isobuilder apply -f deploy/k8s/service.yaml
 ```
 
 数据库通过 `ISOBUILDER_DB_URL` 切到云 RDS；`/data`（基础镜像、构建工作目录、日志）
-走 NFS PV 的独立子目录。
+由 StorageClass 动态供给到 NFS 独立子目录。
 
 ## 使用流程
 
