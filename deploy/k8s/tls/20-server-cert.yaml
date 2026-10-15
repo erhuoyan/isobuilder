@@ -1,0 +1,27 @@
+# isobuilder 服务端证书（由内部 CA 签发，自动续期）
+#
+#   kubectl apply -f deploy/k8s/tls/20-server-cert.yaml
+#
+# SAN 同时包含域名与 IP：两种访问方式都能通过证书校验。
+# 若你之后有了统一内网域名，把 dnsNames 换成它即可（IP 可留作兜底）。
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: isobuilder-tls
+  namespace: isobuilder
+spec:
+  secretName: isobuilder-tls          # Gateway 的 listener 引用这个 Secret
+  duration: 8760h                     # 1 年
+  renewBefore: 720h                   # 到期前 30 天自动续
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always            # 续期时轮换私钥
+  dnsNames:
+    - isobuilder.baremetal.internal
+  ipAddresses:
+    - 114.67.232.32
+  issuerRef:
+    name: internal-ca
+    kind: ClusterIssuer
+    group: cert-manager.io

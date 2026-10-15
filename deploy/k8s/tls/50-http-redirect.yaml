@@ -1,0 +1,36 @@
+# 强制 HTTP → HTTPS 跳转（企业标配）
+#
+#   kubectl apply -f deploy/k8s/tls/50-http-redirect.yaml
+#
+# 说明：
+#   - 本路由只挂在 http listener（sectionName: http），命中 isobuilder 域名时
+#     返回 301 到 https。
+#   - 同时业务路由 deploy/k8s/httproute.yaml 需要改成只挂 https listener，
+#     否则 80 上仍会直接提供业务内容，跳转形同虚设：
+#         parentRefs:
+#           - ...
+#             sectionName: https      # ← 加上这一行
+#   - Gateway API 的 hostnames 只接受域名，不接受 IP。用裸 IP 访问（http://114.67.232.32）
+#     不在本规则内，如需一并跳转，把 hostnames 去掉（表示匹配该 listener 上所有 Host）。
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: isobuilder-https-redirect
+  namespace: isobuilder
+  labels:
+    app.kubernetes.io/name: isobuilder
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy
+      namespace: envoy-gateway-system
+      sectionName: http
+  hostnames:
+    - isobuilder.baremetal.internal
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

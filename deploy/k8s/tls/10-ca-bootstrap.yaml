@@ -1,0 +1,49 @@
+# 内部 CA 自举（cert-manager 标准三步）
+#
+#   kubectl apply -f deploy/k8s/tls/10-ca-bootstrap.yaml
+#
+# 1) 自签 Issuer —— 仅用于签出 CA 自己的证书
+# 2) CA Certificate（isCA: true）—— 落到 Secret，成为内部根 CA
+# 3) CA 类型 ClusterIssuer —— 用它签发所有服务证书
+#
+# 为什么分三步：cert-manager 不内置"内部 CA"，标准的自建方式是先用 selfSigned
+# 签一张 CA 证书，再用这张 CA 去签服务证书。将来换成公网域名时，只需新增一个
+# ACME ClusterIssuer 并改服务 Certificate 的 issuerRef，本文件保持不动。
+#
+# 注意：CA 的 Secret 必须位于 cert-manager 的 cluster resource namespace
+# （默认 cert-manager），ClusterIssuer 才能读取。
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-bootstrap
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: isobuilder-internal-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: "Internal CA (baremetal cluster)"
+  secretName: isobuilder-internal-ca
+  # 根 CA 有效期长、续期窗口宽，避免频繁轮换导致客户端要反复导入
+  duration: 87600h      # 10 年
+  renewBefore: 8760h    # 到期前 1 年续
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: internal-ca
+spec:
+  ca:
+    secretName: isobuilder-internal-ca

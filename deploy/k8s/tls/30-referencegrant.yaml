@@ -1,0 +1,23 @@
+# ReferenceGrant：允许 envoy-gateway-system 里的 Gateway 读取
+# isobuilder 命名空间的 TLS Secret。
+#
+#   kubectl apply -f deploy/k8s/tls/30-referencegrant.yaml
+#
+# Gateway API 默认禁止跨命名空间引用 Secret（安全默认值）。Gateway 在
+# envoy-gateway-system，证书在 isobuilder，因此必须显式授权，否则 443 listener
+# 会停在 ResolvedRefs=False。
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-gateway-read-isobuilder-tls
+  namespace: isobuilder
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: envoy-gateway-system
+  to:
+    - group: ""
+      kind: Secret
+      # 不限定 name，意味着本命名空间内的 Secret 都可被该 Gateway 读取；
+      # 收紧时可加 name: isobuilder-tls

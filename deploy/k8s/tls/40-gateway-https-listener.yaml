@@ -1,0 +1,45 @@
+# 给集群共享 Gateway 增加 443 listener（TLS 终止）
+#
+#   kubectl apply -f deploy/k8s/tls/40-gateway-https-listener.yaml
+#
+# ⚠️ 这是集群共享资源：本文件包含完整的 listeners 定义（现有 http + 新增 https），
+#    apply 会整体替换 listeners 数组。改完后 monitor 命名空间的 grafana/prometheus
+#    也同样获得 HTTPS 能力（它们已有 gateway-access 标签）。
+#
+# 证书引用跨命名空间（envy-gateway-system 的 Gateway 读 isobuilder 的 Secret），
+# 因此必须先应用 30-referencegrant.yaml。
+#
+# 将来接入更多服务：在 certificateRefs 里追加各自的 Secret 即可（SNI 会自动选择）。
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: envoy
+  namespace: envoy-gateway-system
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: "true"
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: isobuilder-tls
+            namespace: isobuilder
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              gateway-access: "true"

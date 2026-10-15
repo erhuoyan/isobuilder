@@ -35,7 +35,7 @@ spec:
         - name: isobuilder
           # 镜像 tag 形如 <版本号>-<commit>-<时间>，由 deploy/build-image.sh 生成。
           # 升级：kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
-          image: hub-pub.jdcloud.com/iaas-jf/isobuilder:0.1.10-d1723e7-20261015-235151
+          image: hub-pub.jdcloud.com/iaas-jf/isobuilder:0.1.11-aa221c5-20261016-002039
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
