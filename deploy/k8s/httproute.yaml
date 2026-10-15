@@ -1,0 +1,43 @@
+# isobuilder 对外入口：Envoy Gateway + HTTPRoute
+#
+#   kubectl apply -f deploy/k8s/httproute.yaml
+#
+# 域名遵循集群现有规范（grafana/prometheus 同为 *.baremetal.internal）。
+# 访问：http://isobuilder.baremetal.internal:30080
+#   （Envoy 以 NodePort 30080 暴露；域名需解析到任一 master，见 README）
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: isobuilder
+  namespace: isobuilder
+  labels:
+    app.kubernetes.io/name: isobuilder
+spec:
+  parentRefs:
+    # 挂到集群共享的那一个 Gateway 上；listener 用 namespaceSelector 放行，
+    # 因此 isobuilder 命名空间必须有 gateway-access=true 标签。
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: envoy
+      namespace: envoy-gateway-system
+  hostnames:
+    - isobuilder.baremetal.internal
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      # 用 Gateway API 标准超时字段（Extended 支持级别），不引入 Envoy 专有 CRD。
+      # 0s = 禁用超时（规范：zero duration SHOULD disable the timeout completely）。
+      # isobuilder 三种流量都是长连接，一旦被超时截断，表现是"传到一半断了/
+      # 日志刷到一半停了"：① 上传基础镜像（单分片 64MiB，整体可达 40GiB）
+      # ② 下载产物 ISO ③ 构建日志 SSE（构建可跑几十分钟）。
+      timeouts:
+        request: 0s
+        backendRequest: 0s
+      backendRefs:
+        - group: ""
+          kind: Service
+          name: isobuilder
+          port: 8080
+          weight: 1

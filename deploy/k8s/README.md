@@ -157,3 +157,36 @@ K8s 里通过 Secret 注入 PG 连接串。
 | 构建报 `磁盘空间不足` | PVC 剩余空间不够 2× 基础镜像，清理旧 ISO 或扩容 |
 | 构建卡住不动 | `kubectl -n isobuilder logs -f deploy/isobuilder`，同时看界面里的构建实时日志 |
 | 界面日志区「已断开」 | SSE 流被 Ingress 缓冲。在 Ingress 上对该路由设 `nginx.ingress.kubernetes.io/proxy-buffering: "off"` |
+
+## 8. 对外访问（Gateway）
+
+集群用 **Envoy Gateway**（GatewayClass `envoy`），已有一个共享 Gateway
+`envoy-gateway-system/envoy`（HTTP，80 端口）。isobuilder 挂一条 HTTPRoute 到它上面：
+
+```bash
+kubectl label namespace isobuilder gateway-access=true --overwrite   # listener 按标签放行
+kubectl apply -f deploy/k8s/httproute.yaml
+```
+
+| 项 | 值 |
+|---|---|
+| 域名 | `isobuilder.baremetal.internal`（与 grafana/prometheus 同一规范） |
+| 后端 | `isobuilder:8080`（ClusterIP Service） |
+| 入口 | Envoy Service 的 NodePort `30080` |
+
+访问 `http://isobuilder.baremetal.internal:30080`，域名需解析到任一 master
+（192.168.150.11/12/13），在 DNS 或 hosts 里加：
+
+```
+192.168.150.11  isobuilder.baremetal.internal
+```
+
+**长连接超时**：HTTPRoute 用 Gateway API 标准字段禁用了超时——`timeouts.request: 0s`
+与 `timeouts.backendRequest: 0s`（规范：zero duration = 完全禁用）。isobuilder 的
+上传（可达 40GiB）、下载（同量级）、构建日志 SSE（可跑几十分钟）都是长连接，
+被超时截断的表现是"传到一半断了 / 日志刷到一半停了"。这里刻意**不用** Envoy 专有的
+`BackendTrafficPolicy`：标准字段可移植、不绑定具体实现。
+
+> Gateway 的 listener 用 `allowedRoutes.namespaces.from: Selector` +
+> `matchLabels: gateway-access: "true"`；命名空间缺这个标签时 HTTPRoute 挂不上
+> （状态里 `Accepted=False`）。
