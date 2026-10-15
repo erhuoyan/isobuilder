@@ -221,10 +221,22 @@ curl -sL -o out.iso "$B/api/artifacts/<artifact_id>/download"
 ```ini
 ISOBUILDER_ADDR=:8081
 ISOBUILDER_AUTH_TOKEN=              # 留空＝不开认证
+ISOBUILDER_DB_URL=                  # 留空＝用本机 SQLite；填 PostgreSQL 连接串则改用外部库
 ISOBUILDER_MAX_CONCURRENT_BUILDS=1  # 并发构建数，每个都要 2×ISO 空间
 ISOBUILDER_BUILD_TIMEOUT_MINUTES=180
 ISOBUILDER_KEEP_WORK_DIR=false      # true 时保留中间目录，排障用（会占大量空间）
 ```
+
+SQLite 是裸机默认存储（`/var/lib/isobuilder/isobuilder.db`，单文件、零外部依赖）。
+要改用 PostgreSQL（例如与 K8s 部署共用同一个云 RDS）时，填两种写法之一并 restart：
+
+```ini
+ISOBUILDER_DB_URL=postgres://user:pass@host:5432/isobuilder?sslmode=prefer
+ISOBUILDER_DB_URL=host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer
+```
+
+切换后端**不会自动搬迁存量数据**；已有 SQLite 数据需手工导出后灌入 PostgreSQL。
+Kubernetes 部署形态见 [`k8s/README.md`](k8s/README.md)。
 
 ---
 

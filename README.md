@@ -82,6 +82,25 @@ export ISOBUILDER_S3_SECRET_KEY=minioadmin
 docker compose up -d --build
 ```
 
+### 3. Kubernetes 部署
+
+单副本 Pod + 云 PostgreSQL + 共享 NFS 卷；完整手册见 [`deploy/k8s/README.md`](deploy/k8s/README.md)。
+
+```bash
+# 交叉构建 amd64 镜像（Apple Silicon 亦可），tag = <版本号>-<commit>-<时间>
+REGISTRY=registry.example.com/team ./deploy/build-image.sh 0.1.0 --push
+
+kubectl create namespace isobuilder
+# 按 deploy/k8s/secret.example.yaml 填好 RDS 连接串
+kubectl -n isobuilder apply -f deploy/k8s/secret.yaml
+kubectl -n isobuilder apply -f deploy/k8s/pv-pvc.yaml
+kubectl -n isobuilder apply -f deploy/k8s/deployment.yaml
+kubectl -n isobuilder apply -f deploy/k8s/service.yaml
+```
+
+数据库通过 `ISOBUILDER_DB_URL` 切到云 RDS；`/data`（基础镜像、构建工作目录、日志）
+走 NFS PV 的独立子目录。
+
 ## 使用流程
 
 ```
@@ -134,6 +153,7 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
 |---|---|---|
 | `ISOBUILDER_ADDR` | `:8080` | 监听地址 |
 | `ISOBUILDER_DATA_DIR` | `/data` | 镜像/日志/产物/DB 根目录，生产要挂载卷 |
+| `ISOBUILDER_DB_URL` | 空 | PostgreSQL 连接串；**留空则用内置 SQLite**（`$DATA_DIR/isobuilder.db`） |
 | `ISOBUILDER_AUTH_TOKEN` | 空 | 设置后 API 需要 `Authorization: Bearer` |
 | `ISOBUILDER_S3_*` | 空 | 对象存储的首次默认值；**推荐改在 Web「系统配置」里维护** |
 | `ISOBUILDER_S3_PUBLIC_BASE` | 空 | 有公共基地址则跳过预签名，直接拼 URL |
@@ -146,14 +166,17 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
 
 ```
 isobuilder/
-├── deploy/                 裸机交付
-│   ├── install.sh          装依赖/二进制/systemd，端口占用自动避让，升级沿用端口
-│   ├── release.sh          打发布包（交叉编译 + 前端 + 模板 + 脚本）
+├── deploy/                 交付
+│   ├── install.sh          裸机：装依赖/二进制/systemd，端口占用自动避让
+│   ├── release.sh          打裸机发布包（交叉编译 + 前端 + 模板 + 脚本）
+│   ├── build-image.sh      打容器镜像，tag = <版本号>-<commit>-<时间>
+│   ├── k8s/                Kubernetes 清单（共享 NFS PV/PVC + Deployment + Service）
 │   ├── isobuilder.service  systemd 单元
 │   └── env.example         /etc/isobuilder/env 模板
-├── Dockerfile              可选：三阶段镜像（前端 pnpm build → 后端 go build → Rocky 运行时）
+├── Dockerfile              三阶段镜像（前端 pnpm build → 后端 go build → Rocky 运行时）
+├── Dockerfile.prebuilt     前置产物运行时镜像（宿主机交叉编译后只装工具）
 ├── docker-compose.yml
-├── backend/                Go（chi 风格标准库 mux + modernc.org/sqlite + S3 SDK）
+├── backend/                Go（标准库 mux + SQLite/PostgreSQL + S3 SDK）
 │   ├── cmd/isobuilder/     main
 │   └── internal/
 │       ├── builder/        五段 ISO 流水线（原 repack-iso-*.sh 的原语移植）
@@ -164,11 +187,9 @@ isobuilder/
 │       ├── model/          领域模型
 │       ├── settings/       系统配置（对象存储），DB 持久化 + 运行时热切换
 │       ├── storage/        S3 兼容对象存储 / 本地文件 / 可热替换的 Switcher
-│       └── store/          SQLite（WAL，单连接）
+│       └── store/          SQLite / PostgreSQL 双方言（ISOBUILDER_DB_URL 切换）
 └── frontend/               SoybeanAdmin（Vue3 + Vite + Naive UI + UnoCSS）
 ```
-
-## 与原工程的关系
 
 本目录的 ISO 流水线不是复制版的脚本逻辑——它是 `repack-iso-*.sh` 在容器里
 不可 loop 挂载之外的统一到 Go 的实现：参数序、grub 命令自动识别、Inspur BMC
