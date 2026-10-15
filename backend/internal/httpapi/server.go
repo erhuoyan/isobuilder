@@ -189,8 +189,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			"driver":              s.manager.Storage().Kind(),
 			"endpoint":            s.manager.Storage().Endpoint(),
 			"bucket":              s.manager.Storage().Bucket(),
-			"prefix":              s.cfg.Storage.Prefix,
-			"presign_ttl_seconds": int(s.cfg.Storage.PresignTTL.Seconds()),
+			"prefix":              s.manager.Storage().Prefix(),
+			"presign_ttl_seconds": int(s.manager.Storage().PresignTTL().Seconds()),
 		},
 		"disk": map[string]any{
 			"data_dir":   s.cfg.DataDir,

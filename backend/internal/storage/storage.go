@@ -39,6 +39,10 @@ type Backend interface {
 	Bucket() string
 	// Endpoint returns the configured endpoint, empty for the local backend.
 	Endpoint() string
+	// Prefix returns the object key prefix, empty for the local backend.
+	Prefix() string
+	// PresignTTL returns the download URL lifetime, zero for the local backend.
+	PresignTTL() time.Duration
 	// Put uploads localPath as key and reports bytes transferred.
 	Put(ctx context.Context, localPath, key string, onProgress func(int64)) error
 	// URL returns a download URL. The local backend returns an empty URL, which
@@ -57,6 +61,12 @@ func (Local) Bucket() string { return "" }
 
 // Endpoint implements Backend.
 func (Local) Endpoint() string { return "" }
+
+// Prefix implements Backend.
+func (Local) Prefix() string { return "" }
+
+// PresignTTL implements Backend.
+func (Local) PresignTTL() time.Duration { return 0 }
 
 // Put implements Backend; the file is already in place.
 func (Local) Put(context.Context, string, string, func(int64)) error { return nil }
@@ -81,6 +91,12 @@ func (s *S3) Bucket() string { return s.cfg.Bucket }
 
 // Endpoint implements Backend.
 func (s *S3) Endpoint() string { return s.cfg.Endpoint }
+
+// Prefix implements Backend.
+func (s *S3) Prefix() string { return s.cfg.Prefix }
+
+// PresignTTL implements Backend.
+func (s *S3) PresignTTL() time.Duration { return s.cfg.PresignTTL }
 
 // Switcher is a Backend whose concrete implementation can be replaced at
 // runtime, which is how the settings page takes effect without a restart.
@@ -114,6 +130,12 @@ func (s *Switcher) Bucket() string { return s.Current().Bucket() }
 
 // Endpoint implements Backend.
 func (s *Switcher) Endpoint() string { return s.Current().Endpoint() }
+
+// Prefix implements Backend.
+func (s *Switcher) Prefix() string { return s.Current().Prefix() }
+
+// PresignTTL implements Backend.
+func (s *Switcher) PresignTTL() time.Duration { return s.Current().PresignTTL() }
 
 // Put implements Backend.
 func (s *Switcher) Put(ctx context.Context, localPath, key string, onProgress func(int64)) error {
