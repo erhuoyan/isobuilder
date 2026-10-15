@@ -22,7 +22,7 @@ import (
 )
 
 // Version is the reported API version.
-const Version = "0.1.0"
+const Version = "0.1.10"
 
 // BuildManager is the slice of builder.Manager the HTTP layer needs.
 type BuildManager interface {

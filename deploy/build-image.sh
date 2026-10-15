@@ -71,10 +71,15 @@ mkdir -p "$ROOT/backend/dist"
 # ── 3. 打运行时镜像（唯一进入容器的步骤，且不含编译）───────────────────────
 echo "▶ 构建镜像"
 TARGET="linux/$ARCH"
+# --provenance=false --sbom=false：不加 buildx 默认的 attestation manifest。
+# 否则多架构索引里会多出一个 unknown/unknown 平台条目（几 KB 的非镜像层），
+# 镜像仓库 UI、扫描器、同步工具都会把它当成异常条目。
+BUILDX_ARGS=(buildx build --platform "$TARGET" -f Dockerfile.prebuilt
+             -t "$IMAGE" --provenance=false --sbom=false)
 if [ "$PUSH" = "1" ]; then
-    (cd "$ROOT" && docker buildx build --platform "$TARGET" -f Dockerfile.prebuilt -t "$IMAGE" --push .)
+    (cd "$ROOT" && docker "${BUILDX_ARGS[@]}" --push .)
 else
-    (cd "$ROOT" && docker buildx build --platform "$TARGET" -f Dockerfile.prebuilt -t "$IMAGE" --load .)
+    (cd "$ROOT" && docker "${BUILDX_ARGS[@]}" --load .)
 fi
 
 echo "✓ $IMAGE"
