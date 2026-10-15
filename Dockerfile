@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # isobuilder — 交付镜像：前端 SPA + Go 后端 + ISO 重打包工具链
 #
 # 构建（仓库根目录；M3 / Apple Silicon 上交叉构建 amd64）:

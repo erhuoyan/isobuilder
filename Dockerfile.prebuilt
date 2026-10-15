@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # isobuilder — 前置产物运行时镜像（无模拟、可离线、镜像最小）
 #
 # 与 Dockerfile 的区别：编译全部在宿主机完成，镜像只负责"装工具 + 拷贝"，
