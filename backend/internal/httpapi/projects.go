@@ -24,6 +24,7 @@ type projectRequest struct {
 	Arch        *string `json:"arch"`
 	IsoID       *string `json:"iso_id"`
 	KickstartID *string `json:"kickstart_id"`
+	ScriptID    *string `json:"script_id"`
 	IsoLabel    *string `json:"iso_label"`
 	OutputName  *string `json:"output_name"`
 	PostScript  *string `json:"post_script"`
@@ -280,6 +281,15 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 			fmt.Sprintf("装机后脚本超过 %d 字节", maxPostScriptBytes))
 	}
 	p.PostScript = postScript
+
+	// script_id: 引用脚本库。省略 = 不变；空串 = 解除绑定。
+	scriptID := pick(req.ScriptID, p.ScriptID)
+	if scriptID != "" {
+		if _, err := s.store.GetScript(scriptID); err != nil {
+			return p, newAPIErr(http.StatusBadRequest, "invalid_script", "所选脚本不存在，请重新选择")
+		}
+	}
+	p.ScriptID = scriptID
 	raw := pick(req.HostsRaw, p.HostsRaw)
 	format := pick(req.HostsFormat, p.HostsFormat)
 	if format == "" || format == "auto" {

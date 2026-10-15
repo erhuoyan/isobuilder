@@ -136,16 +136,73 @@ func (s *Store) DeleteKickstart(id string) error {
 	return err
 }
 
+// --- Script（装机后脚本库）-----------------------------------------------
+
+// ListScripts returns every reusable post-install script, newest edit first.
+func (s *Store) ListScripts() ([]model.Script, error) {
+	rows, err := s.query(`SELECT id,name,remark,content,size_bytes,created_at,updated_at
+	                     FROM scripts ORDER BY updated_at DESC, id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.Script{}
+	for rows.Next() {
+		var sc model.Script
+		if err := rows.Scan(&sc.ID, &sc.Name, &sc.Remark, &sc.Content, &sc.SizeBytes, &sc.CreatedAt, &sc.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
+
+// GetScript returns one script, including its body.
+func (s *Store) GetScript(id string) (model.Script, error) {
+	var sc model.Script
+	err := s.queryRow(`SELECT id,name,remark,content,size_bytes,created_at,updated_at FROM scripts WHERE id=?`, id).
+		Scan(&sc.ID, &sc.Name, &sc.Remark, &sc.Content, &sc.SizeBytes, &sc.CreatedAt, &sc.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sc, ErrNotFound
+	}
+	return sc, err
+}
+
+// CreateScript inserts a script record.
+func (s *Store) CreateScript(sc model.Script) error {
+	_, err := s.exec(`INSERT INTO scripts(id,name,remark,content,size_bytes,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`,
+		sc.ID, sc.Name, sc.Remark, sc.Content, sc.SizeBytes, sc.CreatedAt, sc.UpdatedAt)
+	return err
+}
+
+// UpdateScript replaces the editable fields and restamps updated_at.
+func (s *Store) UpdateScript(id, name, remark, content string) error {
+	_, err := s.exec(`UPDATE scripts SET name=?, remark=?, content=?, size_bytes=?, updated_at=? WHERE id=?`,
+		name, remark, content, len(content), Now(), id)
+	return err
+}
+
+// DeleteScript removes a script record.
+func (s *Store) DeleteScript(id string) error {
+	_, err := s.exec(`DELETE FROM scripts WHERE id=?`, id)
+	return err
+}
+
+// CountProjectsUsingScript counts projects bound to a script.
+func (s *Store) CountProjectsUsingScript(id string) (int, error) {
+	return s.count(`SELECT COUNT(*) FROM projects WHERE script_id=?`, id)
+}
+
 // --- Project ------------------------------------------------------------
 
-const projectCols = `id,name,description,arch,iso_id,kickstart_id,iso_label,output_name,post_script,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
+const projectCols = `id,name,description,arch,iso_id,kickstart_id,script_id,iso_label,output_name,post_script,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scanProject(sc scanner) (model.Project, error) {
 	var p model.Project
 	var summary string
-	err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Arch, &p.IsoID, &p.KickstartID, &p.IsoLabel,
+	err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Arch, &p.IsoID, &p.KickstartID, &p.ScriptID, &p.IsoLabel,
 		&p.OutputName, &p.PostScript, &p.HostsFormat, &p.HostsRaw, &p.HostsJSON, &p.HostsCount, &summary, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return p, err
@@ -217,9 +274,17 @@ func (s *Store) inlineRefs(projects []model.Project) error {
 	for _, i := range isos {
 		isoByID[i.ID] = i
 	}
+	scriptsList, err := s.ListScripts()
+	if err != nil {
+		return err
+	}
 	ksByID := make(map[string]model.Kickstart, len(ksList))
 	for _, k := range ksList {
 		ksByID[k.ID] = k
+	}
+	scriptByID := make(map[string]model.Script, len(scriptsList))
+	for _, sc := range scriptsList {
+		scriptByID[sc.ID] = sc
 	}
 	for i := range projects {
 		if iso, ok := isoByID[projects[i].IsoID]; ok {
@@ -229,6 +294,11 @@ func (s *Store) inlineRefs(projects []model.Project) error {
 		if ks, ok := ksByID[projects[i].KickstartID]; ok {
 			cp := ks
 			projects[i].Kickstart = &cp
+		}
+		if sc, ok := scriptByID[projects[i].ScriptID]; ok {
+			cp := sc
+			cp.Content = "" // 列表只需元信息，正文按需单独查，避免响应膨胀
+			projects[i].Script = &cp
 		}
 	}
 	return nil
@@ -241,13 +311,15 @@ func (s *Store) SaveProject(p model.Project, insert bool) error {
 		return err
 	}
 	if insert {
-		_, err = s.exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
+		_, err = s.exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			p.ID, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.ScriptID, p.IsoLabel, p.OutputName,
 			p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.CreatedAt, p.UpdatedAt)
 		return err
 	}
-	_, err = s.exec(`UPDATE projects SET name=?, description=?, arch=?, iso_id=?, kickstart_id=?,
+	_, err = s.exec(`UPDATE projects SET name=?, description=?, arch=?, iso_id=?, kickstart_id=?, script_id=?,
 	                    iso_label=?, output_name=?, post_script=?, hosts_format=?, hosts_raw=?, hosts_json=?,
-	                    hosts_count=?, hosts_summary=?, updated_at=? WHERE id=?`, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
+	                    hosts_count=?, hosts_summary=?, updated_at=? WHERE id=?`,
+		p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.ScriptID, p.IsoLabel, p.OutputName,
 		p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.UpdatedAt, p.ID)
 	return err
 }

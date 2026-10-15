@@ -5,6 +5,7 @@ import {
   fetchGetIsos,
   fetchGetKickstartContent,
   fetchGetKickstarts,
+  fetchGetScripts,
   fetchImportProject
 } from '@/service/api';
 import { getApiErrorCode, getApiErrorMessage } from '@/service/api/errors';
@@ -50,6 +51,10 @@ const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
 const postScript = ref('');
+/** 脚本库（可复用）；selectedScriptId 为本项目选中的条目 */
+const scripts = ref<Api.IsoBuilder.Script[]>([]);
+const selectedScriptId = ref('');
+const scriptOptions = computed(() => scripts.value.map(item => ({ label: item.name, value: item.id })));
 
 const isos = ref<Api.IsoBuilder.Iso[]>([]);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
@@ -183,6 +188,12 @@ async function loadKickstarts() {
   if (!error) kickstarts.value = data.kickstarts;
 }
 
+async function loadScripts() {
+  const { data, error } = await fetchGetScripts();
+
+  if (!error) scripts.value = data.scripts;
+}
+
 async function handleSave() {
   if (!canSave.value) return;
 
@@ -197,6 +208,7 @@ async function handleSave() {
     iso_label: form.value.iso_label.trim(),
     output_name: form.value.output_name.trim(),
     post_script: postScript.value,
+    script_id: selectedScriptId.value,
     hosts_raw: hostsRaw.value,
     hosts_format: hostsFormat.value
   };
@@ -352,7 +364,7 @@ function goToImportedProject() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadIsos(), loadKickstarts()]);
+  await Promise.all([loadIsos(), loadKickstarts(), loadScripts()]);
 });
 </script>
 
@@ -556,18 +568,30 @@ onMounted(async () => {
 
       <!-- 5. 装机后脚本 -->
       <div v-else-if="currentStep === 4" class="flex flex-col gap-12px">
-        <NInput
-          v-model:value="postScript"
-          type="textarea"
-          :rows="10"
-          placeholder="# 留空则不执行任何自定义脚本。&#10;#!/bin/bash&#10;yum install -y htop&#10;systemctl enable --now htop"
-          class="font-mono"
-        />
+        <NForm label-placement="top" :show-feedback="false">
+          <NFormItem label="脚本库（可选，可复用）">
+            <NSelect
+              v-model:value="selectedScriptId"
+              :options="scriptOptions"
+              clearable
+              placeholder="从脚本库选一个可复用脚本；也可只在下方写本项目专属脚本"
+            />
+          </NFormItem>
+          <NFormItem label="本项目追加脚本（可选）">
+            <NInput
+              v-model:value="postScript"
+              type="textarea"
+              :rows="10"
+              placeholder="# 留空则不追加。库脚本先执行，这里的内容排在其后。"
+              class="font-mono"
+            />
+          </NFormItem>
+        </NForm>
         <NAlert type="info" :bordered="false" :show-icon="true">
           <div class="flex flex-col gap-4px text-13px">
-            <span>脚本将在系统安装完成后的 kickstart <span class="font-mono">%post</span> 阶段执行，位于网络配置之后。</span>
-            <span>脚本内容会以 base64 编码注入，无需担心 <span class="font-mono">%</span> 等特殊字符。</span>
-            <span>建议以 <span class="font-mono">#!/bin/bash</span> 开头。执行记录保存在 <span class="font-mono">/var/log/isobuilder/</span>。</span>
+            <span>脚本在系统安装完成后的 kickstart <span class="font-mono">%post</span> 阶段执行，位于网络配置之后。</span>
+            <span>执行顺序：<span class="font-500">先跑脚本库里选中的脚本，再跑本项目的追加脚本</span>。</span>
+            <span>内容以 base64 注入，无需转义特殊字符；执行记录在 <span class="font-mono">/var/log/isobuilder/</span>。</span>
           </div>
         </NAlert>
       </div>

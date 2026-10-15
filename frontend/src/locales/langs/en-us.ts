@@ -236,6 +236,7 @@ const local: App.I18n.Schema = {
     'build-detail': 'Build Detail',
     'iso-library': 'ISO Library',
     'kickstart-library': 'Kickstart Templates',
+    'script-library': 'Post-install Scripts',
     settings: 'Settings'
   },
   page: {

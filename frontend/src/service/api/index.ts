@@ -3,6 +3,7 @@ export * from './build';
 export * from './iso';
 export * from './kickstart';
 export * from './project';
+export * from './script';
 export * from './route';
 export * from './settings';
 export * from './system';

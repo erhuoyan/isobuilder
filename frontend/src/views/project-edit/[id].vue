@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { fetchGetIsos, fetchGetKickstarts, fetchGetProject, fetchUpdateProject } from '@/service/api';
+import { fetchGetIsos, fetchGetKickstarts, fetchGetProject, fetchGetScripts, fetchUpdateProject } from '@/service/api';
 import HostsEditor from '@/components/isobuilder/hosts-editor.vue';
 import { useRouterPush } from '@/hooks/common/router';
 
@@ -23,6 +23,10 @@ const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
 const postScript = ref('');
+/** 脚本库与当前项目选中的脚本 */
+const scripts = ref<Api.IsoBuilder.Script[]>([]);
+const selectedScriptId = ref('');
+const scriptOptions = computed(() => scripts.value.map(item => ({ label: item.name, value: item.id })));
 
 /** 基础镜像与应答模板随项目绑定存在，编辑页只展示；如需更换应新建项目 */
 const isoLabel = computed(() => {
@@ -73,6 +77,7 @@ async function loadProject() {
   hostsRaw.value = data.project.hosts_raw;
   hostsFormat.value = data.project.hosts_format;
   postScript.value = data.project.post_script;
+  selectedScriptId.value = data.project.script_id;
 }
 
 async function handleSave() {
@@ -86,7 +91,9 @@ async function handleSave() {
     iso_label: form.value.iso_label.trim(),
     output_name: form.value.output_name.trim(),
     post_script: postScript.value,
+    script_id: selectedScriptId.value,
     hosts_raw: hostsRaw.value,
+    hosts_format: hostsFormat.value
   });
 
   saving.value = false;
@@ -108,6 +115,9 @@ onMounted(async () => {
     }),
     fetchGetKickstarts().then(({ data, error }) => {
       if (!error) kickstarts.value = data.kickstarts;
+    }),
+    fetchGetScripts().then(({ data, error }) => {
+      if (!error) scripts.value = data.scripts;
     }),
     loadProject()
   ]);
@@ -166,12 +176,20 @@ onMounted(async () => {
           </NCollapseItem>
           <NCollapseItem title="装机后脚本" name="post-script">
             <NForm size="small" label-placement="top" :show-feedback="false">
-              <NFormItem label="post_script">
+              <NFormItem label="脚本库（可复用）">
+                <NSelect
+                  v-model:value="selectedScriptId"
+                  :options="scriptOptions"
+                  clearable
+                  placeholder="从脚本库选一个；也可只用下方追加脚本"
+                />
+              </NFormItem>
+              <NFormItem label="本项目追加脚本">
                 <NInput
                   v-model:value="postScript"
                   type="textarea"
                   :rows="8"
-                  placeholder="留空则不执行任何自定义脚本。建议以 #!/bin/bash 开头。"
+                  placeholder="留空则不追加。库脚本先执行，这里的内容排在其后。"
                   class="font-mono"
                 />
               </NFormItem>

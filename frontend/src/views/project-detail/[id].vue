@@ -256,7 +256,14 @@ onMounted(async () => {
             <span class="font-mono">{{ project.output_name || '（构建时自动生成）' }}</span>
           </NDescriptionsItem>
           <NDescriptionsItem label="装机后脚本">
-            <NTag v-if="project.post_script" size="small" type="success" :bordered="false">已配置</NTag>
+            <template v-if="project.script || project.post_script">
+              <NTag v-if="project.script" size="small" type="info" :bordered="false">
+                {{ project.script.name }}
+              </NTag>
+              <NTag v-if="project.post_script" size="small" type="success" :bordered="false">
+                追加脚本
+              </NTag>
+            </template>
             <span v-else class="text-gray-400">未配置</span>
           </NDescriptionsItem>
           <NDescriptionsItem label="主机清单">

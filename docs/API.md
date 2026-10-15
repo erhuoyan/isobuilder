@@ -55,6 +55,19 @@
 }
 ```
 
+### Script（装机后脚本库）
+```json
+{
+  "id": "7f3c1a9b2d4e",
+  "name": "安装监控 agent",
+  "remark": "所有机器基线",
+  "content": "#!/bin/bash\n...",     // 脚本正文
+  "size_bytes": 812,
+  "created_at": "2026-09-29T07:11:02Z",
+  "updated_at": "2026-09-29T07:11:02Z"
+}
+```
+
 ### Project（项目）
 ```json
 {
@@ -66,6 +79,8 @@
   "iso": { ...Iso... },             // 只读内联展开；iso 被删除时为 null
   "kickstart_id": "0a1b2c3d4e5f",
   "kickstart": { ...Kickstart... }, // 只读内联展开
+  "script_id": "7f3c1a9b2d4e",      // 引用的脚本库条目；空表示未引用
+  "script": { ...Script... },       // 只读内联展开（不含 content）；未引用或已删除时为 null
   "iso_label": "Rocky-9-8-x86_64",  // 允许为空 → 构建时从原版 ISO 自动探测
   "output_name": "Rocky-9.8-x86_64-auto.iso",  // 允许为空 → 构建时自动生成
   "post_script": "#!/bin/bash\n...", // 项目级装机后脚本，允许为空 → 不注入
@@ -223,6 +238,14 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
 | GET | `/api/kickstarts/{id}/content` | 模板正文 `{"content":"..."}`，前端可预览 |
 | DELETE | `/api/kickstarts/{id}` | 内置模板 → `409 builtin_kickstart`；被项目引用 → `409 kickstart_in_use` |
 
+### 装机后脚本库
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/scripts` | `{"scripts":[...]}`，含正文，按更新时间倒序 |
+| POST | `/api/scripts` | JSON body `{"name":"...","remark":"可选","content":"..."}` → 201 `{"script":{...}}`；空名 → `400 invalid_name`，空内容 → `400 empty_script`，超 64KiB → `413 too_large` |
+| PUT | `/api/scripts/{id}` | 同上 body（省略字段表示不变）→ `{"script":{...}}` |
+| DELETE | `/api/scripts/{id}` | 被项目引用 → `409 script_in_use` |
+
 ### 项目
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -243,6 +266,7 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
   "iso_id": "3f9a1c0b7d21",
   "iso_label": "",
   "output_name": "",
+  "script_id": "",                  // 可选；引用脚本库；省略 = 不变，空串 = 解除绑定
   "post_script": "",                // 可选；省略 = 不变，空串 = 清除；>64KiB → 400 invalid_post_script
   "hosts_raw": "hosts:\n- sn: ...",
   "hosts_format": "auto"            // "auto" | "yaml" | "json"
@@ -250,7 +274,7 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
 ```
 校验失败 → `400 invalid_hosts`，`details.hosts = [{index, field, message}, ...]`。
 
-`post_script` 说明：构建时以 base64 编码追加为独立的 `%post` 段（chroot 内执行），排在模板原有 `%post` 之后；脚本内容、输出与退出码分别落盘到装机机的 `/var/log/isobuilder/post.sh`、`post.log`、`post.exit`。脚本失败不影响安装结果。
+`post_script` / `script_id` 说明：构建时把「脚本库脚本 + 项目追加脚本」合并为一段，以 base64 编码追加为独立的 `%post` 段（chroot 内执行），排在模板原有 `%post` 之后；**库脚本在前，项目追加脚本在后**。合并结果快照进构建记录，之后改脚本库或改项目都不影响已入队的构建。内容、输出与退出码分别落盘到装机机的 `/var/log/isobuilder/post.sh`、`post.log`、`post.exit`。脚本失败不影响安装结果。
 
 `POST /api/validate/hosts` 响应：
 ```json

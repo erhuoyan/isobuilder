@@ -92,6 +92,12 @@ func (s *Server) routes() {
 	m.HandleFunc("PUT /api/kickstarts/{id}", s.handleUpdateKickstart)
 	m.HandleFunc("DELETE /api/kickstarts/{id}", s.handleDeleteKickstart)
 
+	// Script library（装机后脚本库）
+	m.HandleFunc("GET /api/scripts", s.handleListScripts)
+	m.HandleFunc("POST /api/scripts", s.handleCreateScript)
+	m.HandleFunc("PUT /api/scripts/{id}", s.handleUpdateScript)
+	m.HandleFunc("DELETE /api/scripts/{id}", s.handleDeleteScript)
+
 	// Projects
 	m.HandleFunc("GET /api/projects", s.handleListProjects)
 	m.HandleFunc("POST /api/projects", s.handleCreateProject)

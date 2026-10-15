@@ -192,6 +192,18 @@ declare namespace Api {
       created_at: string;
     }
 
+    /** a reusable post-install script (script library) */
+    interface Script {
+      id: string;
+      name: string;
+      remark: string;
+      /** the script body */
+      content: string;
+      size_bytes: number;
+      created_at: string;
+      updated_at: string;
+    }
+
     /** the parsed summary of one host of the inventory */
     interface HostSummary {
       sn: string;
@@ -237,6 +249,10 @@ declare namespace Api {
       kickstart_id: string;
       /** the inline kickstart, null when the template has been deleted */
       kickstart: Kickstart | null;
+      /** id of the bound script, empty when none */
+      script_id: string;
+      /** inline script metadata (body omitted), null when unbound or deleted */
+      script: Script | null;
       iso_label: string;
       output_name: string;
       /** the project-level post-install script, empty when not configured */
@@ -259,6 +275,8 @@ declare namespace Api {
       kickstart_id: string;
       iso_label: string;
       output_name: string;
+      /** id of the bound script from the library */
+      script_id?: string;
       /** the post-install script, omitted/empty when not configured */
       post_script?: string;
       hosts_raw: string;

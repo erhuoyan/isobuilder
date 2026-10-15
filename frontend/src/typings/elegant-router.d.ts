@@ -29,6 +29,7 @@ declare module "@elegant-router/types" {
     "project-detail": "/projects/:id";
     "project-edit": "/projects/:id/edit";
     "project-list": "/projects";
+    "script-library": "/script-library";
     "settings": "/settings";
   };
 
@@ -73,6 +74,7 @@ declare module "@elegant-router/types" {
     | "project-detail"
     | "project-edit"
     | "project-list"
+    | "script-library"
     | "settings"
   >;
 
@@ -102,6 +104,7 @@ declare module "@elegant-router/types" {
     | "project-detail"
     | "project-edit"
     | "project-list"
+    | "script-library"
     | "settings"
   >;
 

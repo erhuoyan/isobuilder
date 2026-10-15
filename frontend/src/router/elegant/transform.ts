@@ -175,6 +175,7 @@ const routeMap: RouteMap = {
   "project-detail": "/projects/:id",
   "project-edit": "/projects/:id/edit",
   "project-list": "/projects",
+  "script-library": "/script-library",
   "settings": "/settings"
 };
 

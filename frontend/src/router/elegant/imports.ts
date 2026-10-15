@@ -27,5 +27,6 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   "project-detail": () => import("@/views/project-detail/[id].vue"),
   "project-edit": () => import("@/views/project-edit/[id].vue"),
   "project-list": () => import("@/views/project-list/index.vue"),
+  "script-library": () => import("@/views/script-library/index.vue"),
   settings: () => import("@/views/settings/index.vue"),
 };

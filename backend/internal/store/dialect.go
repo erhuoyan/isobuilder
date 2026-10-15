@@ -194,6 +194,16 @@ CREATE TABLE IF NOT EXISTS kickstarts (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS scripts (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  remark     TEXT NOT NULL DEFAULT '',
+  content    TEXT NOT NULL DEFAULT '',
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS projects (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
@@ -201,6 +211,7 @@ CREATE TABLE IF NOT EXISTS projects (
   arch          TEXT NOT NULL,
   iso_id        TEXT NOT NULL DEFAULT '',
   kickstart_id  TEXT NOT NULL DEFAULT '',
+  script_id     TEXT NOT NULL DEFAULT '',
   iso_label     TEXT NOT NULL DEFAULT '',
   output_name   TEXT NOT NULL DEFAULT '',
   post_script   TEXT NOT NULL DEFAULT '',
@@ -293,6 +304,16 @@ CREATE TABLE IF NOT EXISTS kickstarts (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS scripts (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  remark     TEXT NOT NULL DEFAULT '',
+  content    TEXT NOT NULL DEFAULT '',
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS projects (
   id            TEXT PRIMARY KEY,
   name          TEXT NOT NULL,
@@ -300,6 +321,7 @@ CREATE TABLE IF NOT EXISTS projects (
   arch          TEXT NOT NULL,
   iso_id        TEXT NOT NULL DEFAULT '',
   kickstart_id  TEXT NOT NULL DEFAULT '',
+  script_id     TEXT NOT NULL DEFAULT '',
   iso_label     TEXT NOT NULL DEFAULT '',
   output_name   TEXT NOT NULL DEFAULT '',
   post_script   TEXT NOT NULL DEFAULT '',
@@ -379,6 +401,7 @@ func (s *Store) migrate() error {
 		"ALTER TABLE builds ADD COLUMN post_script TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE artifacts ADD COLUMN md5 TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE kickstarts ADD COLUMN remark TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE projects ADD COLUMN script_id TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := s.db.Exec(stmt); err != nil {
 			continue // duplicate column → already migrated

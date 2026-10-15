@@ -70,6 +70,18 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 装机后脚本：脚本库内容在前，项目内联追加在后。在此解析成最终文本，
+	// 快照进 build 行 —— 之后改脚本库或改项目都不影响本次构建。
+	postScript := p.PostScript
+	if p.ScriptID != "" {
+		sc, err := s.store.GetScript(p.ScriptID)
+		if err != nil {
+			fail(w, http.StatusBadRequest, "invalid_script", "项目引用的脚本已不存在，请重新选择")
+			return
+		}
+		postScript = combineScripts(sc.Content, p.PostScript)
+	}
+
 	b := model.Build{
 		ID:          store.NewID(),
 		ProjectID:   p.ID,
@@ -85,7 +97,7 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 		HostsJSON:   p.HostsJSON,
 		HostsCount:  p.HostsCount,
 		OutputName:  p.OutputName,
-		PostScript:  p.PostScript,
+		PostScript:  postScript,
 		CreatedAt:   store.Now(),
 	}
 	if b.OutputName == "" {
@@ -417,5 +429,20 @@ func (l *lineReader) next() (string, int64, error) {
 		if err != nil {
 			return "", l.offset, err
 		}
+	}
+}
+
+// combineScripts renders the library script followed by the project's inline
+// script: the shared baseline runs first, project-specific steps append after.
+func combineScripts(library, inline string) string {
+	library = strings.TrimRight(library, "\n")
+	inline = strings.TrimSpace(inline)
+	switch {
+	case library == "":
+		return inline
+	case inline == "":
+		return library
+	default:
+		return library + "\n\n" + inline + "\n"
 	}
 }

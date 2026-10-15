@@ -232,6 +232,7 @@ const local: App.I18n.Schema = {
     'build-detail': '构建详情',
     'iso-library': '镜像库',
     'kickstart-library': '应答模板',
+    'script-library': '装机后脚本',
     settings: '系统配置'
   },
   page: {

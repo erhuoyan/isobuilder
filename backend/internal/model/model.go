@@ -83,6 +83,18 @@ type Kickstart struct {
 	CreatedAt    string   `json:"created_at"`
 }
 
+// Script is a reusable post-install script kept in its own library, so several
+// projects can share one script instead of each pasting its own copy.
+type Script struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Remark    string `json:"remark"`
+	Content   string `json:"content"`
+	SizeBytes int64  `json:"size_bytes"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
 // HostSummary is one row of the parsed host inventory.
 type HostSummary struct {
 	SN          string `json:"sn"`
@@ -105,6 +117,8 @@ type Project struct {
 	Iso          *ISO          `json:"iso"`
 	KickstartID  string        `json:"kickstart_id"`
 	Kickstart    *Kickstart    `json:"kickstart"`
+	ScriptID     string        `json:"script_id"`
+	Script       *Script       `json:"script"`
 	IsoLabel     string        `json:"iso_label"`
 	OutputName   string        `json:"output_name"`
 	PostScript   string        `json:"post_script"`

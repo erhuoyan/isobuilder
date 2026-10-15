@@ -146,6 +146,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'script-library',
+    path: '/script-library',
+    component: 'layout.base$view.script-library',
+    meta: {
+      title: 'script-library',
+      i18nKey: 'route.script-library',
+      hideInMenu: false
+    }
+  },
+  {
     name: 'settings',
     path: '/settings',
     component: 'layout.base$view.settings',
