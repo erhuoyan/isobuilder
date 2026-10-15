@@ -31,7 +31,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	st, err := store.Open(cfg.DBPath)
+	var st *store.Store
+	if cfg.DatabaseURL != "" {
+		st, err = store.OpenPostgres(cfg.DatabaseURL, "")
+	} else {
+		st, err = store.OpenSQLite(cfg.DBPath)
+	}
 	if err != nil {
 		logger.Error("打开数据库失败", "err", err)
 		os.Exit(1)

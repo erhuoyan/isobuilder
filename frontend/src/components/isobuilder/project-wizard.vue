@@ -21,6 +21,7 @@ const steps = [
   { key: 'iso', title: '基础镜像', description: '选用一个已就绪的 ISO' },
   { key: 'kickstart', title: '应答模板', description: '选用 kickstart 模板' },
   { key: 'hosts', title: '主机清单', description: '粘贴并校验主机信息' },
+  { key: 'post-script', title: '装机后脚本', description: '安装完成后执行的自定义脚本' },
   { key: 'advanced', title: '高级项', description: 'ISO 卷标与产物文件名' }
 ] as const;
 
@@ -45,10 +46,10 @@ const form = ref({
   iso_label: '',
   output_name: ''
 });
-
 const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
+const postScript = ref('');
 
 const isos = ref<Api.IsoBuilder.Iso[]>([]);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
@@ -117,7 +118,6 @@ const stepHint = computed(() => {
     case 2:
       return form.value.kickstart_id ? '' : '请选择一个 kickstart 模板。';
     case 3:
-    case 4:
       return hostHint.value;
     default:
       return '';
@@ -196,6 +196,7 @@ async function handleSave() {
     kickstart_id: form.value.kickstart_id,
     iso_label: form.value.iso_label.trim(),
     output_name: form.value.output_name.trim(),
+    post_script: postScript.value,
     hosts_raw: hostsRaw.value,
     hosts_format: hostsFormat.value
   };
@@ -553,7 +554,25 @@ onMounted(async () => {
         <HostsEditor v-model:value="hostsRaw" v-model:format="hostsFormat" @validate="onValidateHosts" />
       </div>
 
-      <!-- 5. 高级项 -->
+      <!-- 5. 装机后脚本 -->
+      <div v-else-if="currentStep === 4" class="flex flex-col gap-12px">
+        <NInput
+          v-model:value="postScript"
+          type="textarea"
+          :rows="10"
+          placeholder="# 留空则不执行任何自定义脚本。&#10;#!/bin/bash&#10;yum install -y htop&#10;systemctl enable --now htop"
+          class="font-mono"
+        />
+        <NAlert type="info" :bordered="false" :show-icon="true">
+          <div class="flex flex-col gap-4px text-13px">
+            <span>脚本将在系统安装完成后的 kickstart <span class="font-mono">%post</span> 阶段执行，位于网络配置之后。</span>
+            <span>脚本内容会以 base64 编码注入，无需担心 <span class="font-mono">%</span> 等特殊字符。</span>
+            <span>建议以 <span class="font-mono">#!/bin/bash</span> 开头。执行记录保存在 <span class="font-mono">/var/log/isobuilder/</span>。</span>
+          </div>
+        </NAlert>
+      </div>
+
+      <!-- 6. 高级项 -->
       <NForm v-else label-placement="top">
         <NFormItem label="ISO 卷标（iso_label）">
           <NInput v-model:value="form.iso_label" placeholder="留空则构建时自动探测原版 ISO 的卷标" />

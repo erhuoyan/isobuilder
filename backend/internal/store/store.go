@@ -1,6 +1,3 @@
-// Package store persists ISO library, kickstart templates, projects, builds and
-// artifacts in SQLite. All timestamps are stored as UTC RFC3339 strings, which
-// is what the HTTP API returns verbatim.
 package store
 
 import (
@@ -12,150 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
-
 	"isobuilder/internal/model"
 )
 
-// ErrNotFound is returned when a row does not exist.
-var ErrNotFound = errors.New("not found")
-
-// Store wraps the SQLite database. The server is single-process by design, so a
-// single connection serialises writers and keeps SQLITE_BUSY away.
-type Store struct {
-	db *sql.DB
-}
-
-const schema = `
-CREATE TABLE IF NOT EXISTS isos (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  filename   TEXT NOT NULL,
-  arch       TEXT NOT NULL,
-  size_bytes INTEGER NOT NULL DEFAULT 0,
-  sha256     TEXT NOT NULL DEFAULT '',
-  md5        TEXT NOT NULL DEFAULT '',
-  remark     TEXT NOT NULL DEFAULT '',
-  status     TEXT NOT NULL,
-  source     TEXT NOT NULL,
-  path       TEXT NOT NULL,
-  error      TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS kickstarts (
-  id         TEXT PRIMARY KEY,
-  name       TEXT NOT NULL,
-  arch       TEXT NOT NULL,
-  builtin    INTEGER NOT NULL DEFAULT 0,
-  remark     TEXT NOT NULL DEFAULT '',
-  path       TEXT NOT NULL,
-  size_bytes INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS projects (
-  id            TEXT PRIMARY KEY,
-  name          TEXT NOT NULL,
-  description   TEXT NOT NULL DEFAULT '',
-  arch          TEXT NOT NULL,
-  iso_id        TEXT NOT NULL DEFAULT '',
-  kickstart_id  TEXT NOT NULL DEFAULT '',
-  iso_label     TEXT NOT NULL DEFAULT '',
-  output_name   TEXT NOT NULL DEFAULT '',
-  hosts_format  TEXT NOT NULL DEFAULT 'yaml',
-  hosts_raw     TEXT NOT NULL DEFAULT '',
-  hosts_json    TEXT NOT NULL DEFAULT '',
-  hosts_count   INTEGER NOT NULL DEFAULT 0,
-  hosts_summary TEXT NOT NULL DEFAULT '[]',
-  created_at    TEXT NOT NULL,
-  updated_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS builds (
-  id           TEXT PRIMARY KEY,
-  project_id   TEXT NOT NULL,
-  project_name TEXT NOT NULL DEFAULT '',
-  status       TEXT NOT NULL,
-  stage        TEXT NOT NULL DEFAULT '',
-  stage_index  INTEGER NOT NULL DEFAULT 0,
-  stage_total  INTEGER NOT NULL DEFAULT 5,
-  progress     INTEGER NOT NULL DEFAULT 0,
-  arch         TEXT NOT NULL DEFAULT '',
-  iso_id       TEXT NOT NULL DEFAULT '',
-  iso_name     TEXT NOT NULL DEFAULT '',
-  iso_label    TEXT NOT NULL DEFAULT '',
-  kickstart_id TEXT NOT NULL DEFAULT '',
-  hosts_json   TEXT NOT NULL DEFAULT '',
-  hosts_count  INTEGER NOT NULL DEFAULT 0,
-  output_name  TEXT NOT NULL DEFAULT '',
-  work_dir     TEXT NOT NULL DEFAULT '',
-  error        TEXT NOT NULL DEFAULT '',
-  artifact_id  TEXT NOT NULL DEFAULT '',
-  created_at   TEXT NOT NULL,
-  started_at   TEXT NOT NULL DEFAULT '',
-  finished_at  TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX IF NOT EXISTS idx_builds_project ON builds(project_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS artifacts (
-  id             TEXT PRIMARY KEY,
-  build_id       TEXT NOT NULL,
-  filename       TEXT NOT NULL,
-  size_bytes     INTEGER NOT NULL DEFAULT 0,
-  sha256         TEXT NOT NULL DEFAULT '',
-  md5            TEXT NOT NULL DEFAULT '',
-  storage        TEXT NOT NULL,
-  storage_key    TEXT NOT NULL DEFAULT '',
-  url            TEXT NOT NULL DEFAULT '',
-  url_expires_at TEXT NOT NULL DEFAULT '',
-  local_path     TEXT NOT NULL DEFAULT '',
-  created_at     TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_artifacts_build ON artifacts(build_id);
-
-CREATE TABLE IF NOT EXISTS settings (
-  key        TEXT PRIMARY KEY,
-  value      TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL
-);
-`
-
-// Open opens and migrates the database. Builds left queued or running by a
-// previous process are marked failed, because their subprocess is gone.
-func Open(path string) (*Store, error) {
-	dsn := "file:" + path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(1)
-	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-	if _, err := db.Exec(schema); err != nil {
-		return nil, fmt.Errorf("migrate database: %w", err)
-	}
-	// 已存在的旧库补列（CREATE TABLE IF NOT EXISTS 不会改老表结构）
-	for _, stmt := range []string{
-		"ALTER TABLE isos ADD COLUMN md5 TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE isos ADD COLUMN remark TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE artifacts ADD COLUMN md5 TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE kickstarts ADD COLUMN remark TEXT NOT NULL DEFAULT ''",
-	} {
-		if _, err := db.Exec(stmt); err != nil {
-			// duplicate column → 已经迁移过，忽略
-			continue
-		}
-	}
-	s := &Store{db: db}
-	if _, err := db.Exec(`UPDATE builds SET status=?, error=?, finished_at=?
-	                      WHERE status IN (?,?)`,
-		model.BuildFailed, "服务重启，构建中断", Now(), model.BuildQueued, model.BuildRunning); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
 
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
@@ -176,8 +32,8 @@ func NewID() string {
 
 // ListISOs returns every ISO record, newest first.
 func (s *Store) ListISOs() ([]model.ISO, error) {
-	rows, err := s.db.Query(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
-	                        FROM isos ORDER BY created_at DESC, rowid DESC`)
+	rows, err := s.query(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
+	                        FROM isos ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +53,7 @@ func (s *Store) ListISOs() ([]model.ISO, error) {
 // GetISO returns one ISO record.
 func (s *Store) GetISO(id string) (model.ISO, error) {
 	var i model.ISO
-	err := s.db.QueryRow(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
+	err := s.queryRow(`SELECT id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at
 	                      FROM isos WHERE id=?`, id).
 		Scan(&i.ID, &i.Name, &i.Filename, &i.Arch, &i.SizeBytes, &i.SHA256, &i.MD5, &i.Remark, &i.Status, &i.Source, &i.Path, &i.Error, &i.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,9 +64,8 @@ func (s *Store) GetISO(id string) (model.ISO, error) {
 
 // CreateISO inserts an ISO record.
 func (s *Store) CreateISO(i model.ISO) error {
-	_, err := s.db.Exec(`INSERT INTO isos(id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at)
-	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		i.ID, i.Name, i.Filename, i.Arch, i.SizeBytes, i.SHA256, i.MD5, i.Remark, i.Status, i.Source, i.Path, i.Error, i.CreatedAt)
+	_, err := s.exec(`INSERT INTO isos(id,name,filename,arch,size_bytes,sha256,md5,remark,status,source,path,error,created_at)
+	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, i.ID, i.Name, i.Filename, i.Arch, i.SizeBytes, i.SHA256, i.MD5, i.Remark, i.Status, i.Source, i.Path, i.Error, i.CreatedAt)
 	return err
 }
 
@@ -221,14 +76,13 @@ func (s *Store) FinishISO(id, status, sha256 string, sizeBytes int64, errMsg str
 
 // FinishISOWithMD5 additionally records an MD5 digest (装机校验习惯用 MD5).
 func (s *Store) FinishISOWithMD5(id, status, sha256, md5 string, sizeBytes int64, errMsg string) error {
-	_, err := s.db.Exec(`UPDATE isos SET status=?, sha256=?, md5=?, size_bytes=?, error=? WHERE id=?`,
-		status, sha256, md5, sizeBytes, errMsg, id)
+	_, err := s.exec(`UPDATE isos SET status=?, sha256=?, md5=?, size_bytes=?, error=? WHERE id=?`, status, sha256, md5, sizeBytes, errMsg, id)
 	return err
 }
 
 // DeleteISO removes an ISO record.
 func (s *Store) DeleteISO(id string) error {
-	_, err := s.db.Exec(`DELETE FROM isos WHERE id=?`, id)
+	_, err := s.exec(`DELETE FROM isos WHERE id=?`, id)
 	return err
 }
 
@@ -236,7 +90,7 @@ func (s *Store) DeleteISO(id string) error {
 
 // ListKickstarts returns templates, built-ins first.
 func (s *Store) ListKickstarts() ([]model.Kickstart, error) {
-	rows, err := s.db.Query(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts
+	rows, err := s.query(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts
 	                         ORDER BY builtin DESC, name ASC`)
 	if err != nil {
 		return nil, err
@@ -256,7 +110,7 @@ func (s *Store) ListKickstarts() ([]model.Kickstart, error) {
 // GetKickstart returns one template.
 func (s *Store) GetKickstart(id string) (model.Kickstart, error) {
 	var k model.Kickstart
-	err := s.db.QueryRow(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts WHERE id=?`, id).
+	err := s.queryRow(`SELECT id,name,arch,builtin,remark,path,size_bytes,created_at FROM kickstarts WHERE id=?`, id).
 		Scan(&k.ID, &k.Name, &k.Arch, &k.Builtin, &k.Remark, &k.Path, &k.SizeBytes, &k.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return k, ErrNotFound
@@ -266,26 +120,25 @@ func (s *Store) GetKickstart(id string) (model.Kickstart, error) {
 
 // CreateKickstart inserts a template record.
 func (s *Store) CreateKickstart(k model.Kickstart) error {
-	_, err := s.db.Exec(`INSERT INTO kickstarts(id,name,arch,builtin,remark,path,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?)`,
-		k.ID, k.Name, k.Arch, k.Builtin, k.Remark, k.Path, k.SizeBytes, k.CreatedAt)
+	_, err := s.exec(`INSERT INTO kickstarts(id,name,arch,builtin,remark,path,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?)`, k.ID, k.Name, k.Arch, k.Builtin, k.Remark, k.Path, k.SizeBytes, k.CreatedAt)
 	return err
 }
 
 // UpdateKickstart updates the editable fields of a template.
 func (s *Store) UpdateKickstart(id, name, remark string) error {
-	_, err := s.db.Exec(`UPDATE kickstarts SET name=?, remark=? WHERE id=?`, name, remark, id)
+	_, err := s.exec(`UPDATE kickstarts SET name=?, remark=? WHERE id=?`, name, remark, id)
 	return err
 }
 
 // DeleteKickstart removes a template record.
 func (s *Store) DeleteKickstart(id string) error {
-	_, err := s.db.Exec(`DELETE FROM kickstarts WHERE id=?`, id)
+	_, err := s.exec(`DELETE FROM kickstarts WHERE id=?`, id)
 	return err
 }
 
 // --- Project ------------------------------------------------------------
 
-const projectCols = `id,name,description,arch,iso_id,kickstart_id,iso_label,output_name,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
+const projectCols = `id,name,description,arch,iso_id,kickstart_id,iso_label,output_name,post_script,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -293,7 +146,7 @@ func scanProject(sc scanner) (model.Project, error) {
 	var p model.Project
 	var summary string
 	err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Arch, &p.IsoID, &p.KickstartID, &p.IsoLabel,
-		&p.OutputName, &p.HostsFormat, &p.HostsRaw, &p.HostsJSON, &p.HostsCount, &summary, &p.CreatedAt, &p.UpdatedAt)
+		&p.OutputName, &p.PostScript, &p.HostsFormat, &p.HostsRaw, &p.HostsJSON, &p.HostsCount, &summary, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return p, err
 	}
@@ -311,7 +164,7 @@ func scanProject(sc scanner) (model.Project, error) {
 // ListProjects returns every project without the raw inventory body, with the
 // referenced ISO and kickstart inlined for display.
 func (s *Store) ListProjects() ([]model.Project, error) {
-	rows, err := s.db.Query(`SELECT ` + projectCols + ` FROM projects ORDER BY updated_at DESC, rowid DESC`)
+	rows, err := s.query(`SELECT ` + projectCols + ` FROM projects ORDER BY updated_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +185,7 @@ func (s *Store) ListProjects() ([]model.Project, error) {
 
 // GetProject returns one project including its raw inventory.
 func (s *Store) GetProject(id string) (model.Project, error) {
-	p, err := scanProject(s.db.QueryRow(`SELECT `+projectCols+` FROM projects WHERE id=?`, id))
+	p, err := scanProject(s.queryRow(`SELECT `+projectCols+` FROM projects WHERE id=?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -388,16 +241,14 @@ func (s *Store) SaveProject(p model.Project, insert bool) error {
 		return err
 	}
 	if insert {
-		_, err = s.db.Exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			p.ID, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
-			p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.CreatedAt, p.UpdatedAt)
+		_, err = s.exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, p.ID, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
+			p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.CreatedAt, p.UpdatedAt)
 		return err
 	}
-	_, err = s.db.Exec(`UPDATE projects SET name=?, description=?, arch=?, iso_id=?, kickstart_id=?,
-	                    iso_label=?, output_name=?, hosts_format=?, hosts_raw=?, hosts_json=?,
-	                    hosts_count=?, hosts_summary=?, updated_at=? WHERE id=?`,
-		p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
-		p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.UpdatedAt, p.ID)
+	_, err = s.exec(`UPDATE projects SET name=?, description=?, arch=?, iso_id=?, kickstart_id=?,
+	                    iso_label=?, output_name=?, post_script=?, hosts_format=?, hosts_raw=?, hosts_json=?,
+	                    hosts_count=?, hosts_summary=?, updated_at=? WHERE id=?`, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.IsoLabel, p.OutputName,
+		p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.UpdatedAt, p.ID)
 	return err
 }
 
@@ -409,16 +260,16 @@ func (s *Store) UpdateProjectSummary(id string, count int, summary []model.HostS
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec(`UPDATE projects SET hosts_count=?, hosts_summary=? WHERE id=?`, count, string(body), id)
+	_, err = s.exec(`UPDATE projects SET hosts_count=?, hosts_summary=? WHERE id=?`, count, string(body), id)
 	return err
 }
 
 // DeleteProject removes a project together with its build history.
 func (s *Store) DeleteProject(id string) error {
-	if _, err := s.db.Exec(`DELETE FROM builds WHERE project_id=?`, id); err != nil {
+	if _, err := s.exec(`DELETE FROM builds WHERE project_id=?`, id); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`DELETE FROM projects WHERE id=?`, id)
+	_, err := s.exec(`DELETE FROM projects WHERE id=?`, id)
 	return err
 }
 
@@ -434,20 +285,20 @@ func (s *Store) CountProjectsUsingKickstart(id string) (int, error) {
 
 func (s *Store) count(query string, args ...any) (int, error) {
 	var n int
-	err := s.db.QueryRow(query, args...).Scan(&n)
+	err := s.queryRow(query, args...).Scan(&n)
 	return n, err
 }
 
 // --- Build --------------------------------------------------------------
 
 const buildCols = `id,project_id,project_name,status,stage,stage_index,stage_total,progress,arch,iso_id,iso_name,
-iso_label,kickstart_id,hosts_json,hosts_count,output_name,work_dir,error,artifact_id,created_at,started_at,finished_at`
+iso_label,kickstart_id,hosts_json,hosts_count,output_name,post_script,work_dir,error,artifact_id,created_at,started_at,finished_at`
 
 func scanBuild(sc scanner) (model.Build, error) {
 	var b model.Build
 	err := sc.Scan(&b.ID, &b.ProjectID, &b.ProjectName, &b.Status, &b.Stage, &b.StageIndex, &b.StageTotal,
 		&b.Progress, &b.Arch, &b.IsoPath, &b.IsoName, &b.IsoLabel, &b.KSID, &b.HostsJSON, &b.HostsCount,
-		&b.OutputName, &b.WorkDir, &b.Error, &b.ArtifactID, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
+		&b.OutputName, &b.PostScript, &b.WorkDir, &b.Error, &b.ArtifactID, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
 	if err != nil {
 		return b, err
 	}
@@ -459,15 +310,14 @@ func scanBuild(sc scanner) (model.Build, error) {
 // CreateBuild inserts a queued build. The build row snapshots everything the
 // worker needs so a project edit mid-build cannot change the outcome.
 func (s *Store) CreateBuild(b model.Build) error {
-	_, err := s.db.Exec(`INSERT INTO builds(`+buildCols+`) VALUES(`+placeholders(22)+`)`,
-		b.ID, b.ProjectID, b.ProjectName, b.Status, b.Stage, b.StageIndex, b.StageTotal, b.Progress,
+	_, err := s.exec(`INSERT INTO builds(`+buildCols+`) VALUES(`+s.placeholders(23)+`)`, b.ID, b.ProjectID, b.ProjectName, b.Status, b.Stage, b.StageIndex, b.StageTotal, b.Progress,
 		b.Arch, b.IsoPath, b.IsoName, b.IsoLabel, b.KSID, b.HostsJSON, b.HostsCount, b.OutputName,
-		b.WorkDir, b.Error, b.ArtifactID, b.CreatedAt, b.StartedAt, b.FinishedAt)
+		b.PostScript, b.WorkDir, b.Error, b.ArtifactID, b.CreatedAt, b.StartedAt, b.FinishedAt)
 	return err
 }
 
 func (s *Store) buildByID(id string) (model.Build, error) {
-	b, err := scanBuild(s.db.QueryRow(`SELECT `+buildCols+` FROM builds WHERE id=?`, id))
+	b, err := scanBuild(s.queryRow(`SELECT `+buildCols+` FROM builds WHERE id=?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, ErrNotFound
 	}
@@ -494,10 +344,10 @@ func (s *Store) ListBuilds(projectID string, limit int) ([]model.Build, error) {
 		query += ` WHERE project_id=?`
 		args = append(args, projectID)
 	}
-	query += ` ORDER BY created_at DESC, rowid DESC LIMIT ?`
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 
-	rows, err := s.db.Query(query, args...)
+	rows, err := s.query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -552,39 +402,37 @@ func (s *Store) withArtifact(b model.Build) (model.Build, error) {
 
 // StartBuild marks a build running and stamps its start time.
 func (s *Store) StartBuild(id string) error {
-	_, err := s.db.Exec(`UPDATE builds SET status=?, started_at=? WHERE id=?`, model.BuildRunning, Now(), id)
+	_, err := s.exec(`UPDATE builds SET status=?, started_at=? WHERE id=?`, model.BuildRunning, Now(), id)
 	return err
 }
 
 // SetBuildStage records the pipeline stage, its 1-based index and progress.
 func (s *Store) SetBuildStage(id, stage string, index, progress int) error {
-	_, err := s.db.Exec(`UPDATE builds SET stage=?, stage_index=?, progress=? WHERE id=?`, stage, index, progress, id)
+	_, err := s.exec(`UPDATE builds SET stage=?, stage_index=?, progress=? WHERE id=?`, stage, index, progress, id)
 	return err
 }
 
 // SetBuildWorkDir records the scratch directory used by the build.
 func (s *Store) SetBuildWorkDir(id, dir string) error {
-	_, err := s.db.Exec(`UPDATE builds SET work_dir=? WHERE id=?`, dir, id)
+	_, err := s.exec(`UPDATE builds SET work_dir=? WHERE id=?`, dir, id)
 	return err
 }
 
 // FinishBuild marks a build terminal.
 func (s *Store) FinishBuild(id, status, errMsg string, progress int) error {
-	_, err := s.db.Exec(`UPDATE builds SET status=?, error=?, progress=?, finished_at=? WHERE id=?`,
-		status, errMsg, progress, Now(), id)
+	_, err := s.exec(`UPDATE builds SET status=?, error=?, progress=?, finished_at=? WHERE id=?`, status, errMsg, progress, Now(), id)
 	return err
 }
 
 // SetBuildArtifact links the produced artifact to its build.
 func (s *Store) SetBuildArtifact(buildID, artifactID string) error {
-	_, err := s.db.Exec(`UPDATE builds SET artifact_id=? WHERE id=?`, artifactID, buildID)
+	_, err := s.exec(`UPDATE builds SET artifact_id=? WHERE id=?`, artifactID, buildID)
 	return err
 }
 
 // ActiveBuildIDs lists queued and running builds, oldest first.
 func (s *Store) ActiveBuildIDs() ([]string, error) {
-	rows, err := s.db.Query(`SELECT id FROM builds WHERE status IN (?,?) ORDER BY created_at, rowid`,
-		model.BuildQueued, model.BuildRunning)
+	rows, err := s.query(`SELECT id FROM builds WHERE status IN (?,?) ORDER BY created_at, id`, model.BuildQueued, model.BuildRunning)
 	if err != nil {
 		return nil, err
 	}
@@ -615,23 +463,22 @@ func (s *Store) CountActiveBuildsForProject(projectID string) (int, error) {
 
 // CreateArtifact inserts an artifact record.
 func (s *Store) CreateArtifact(a model.Artifact) error {
-	_, err := s.db.Exec(`INSERT INTO artifacts(id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at)
-	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		a.ID, a.BuildID, a.Filename, a.SizeBytes, a.SHA256, a.MD5, a.Storage, a.StorageKey, a.URL,
+	_, err := s.exec(`INSERT INTO artifacts(id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at)
+	                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, a.ID, a.BuildID, a.Filename, a.SizeBytes, a.SHA256, a.MD5, a.Storage, a.StorageKey, a.URL,
 		a.URLExpiresAt, a.LocalPath, a.CreatedAt)
 	return err
 }
 
 // RefreshArtifactURL stores a freshly signed URL.
 func (s *Store) RefreshArtifactURL(id, url, expiresAt string) error {
-	_, err := s.db.Exec(`UPDATE artifacts SET url=?, url_expires_at=? WHERE id=?`, url, expiresAt, id)
+	_, err := s.exec(`UPDATE artifacts SET url=?, url_expires_at=? WHERE id=?`, url, expiresAt, id)
 	return err
 }
 
 // GetArtifact returns one artifact.
 func (s *Store) GetArtifact(id string) (model.Artifact, error) {
 	var a model.Artifact
-	err := s.db.QueryRow(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
+	err := s.queryRow(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
 	                      FROM artifacts WHERE id=?`, id).
 		Scan(&a.ID, &a.BuildID, &a.Filename, &a.SizeBytes, &a.SHA256, &a.MD5, &a.Storage, &a.StorageKey,
 			&a.URL, &a.URLExpiresAt, &a.LocalPath, &a.CreatedAt)
@@ -642,8 +489,8 @@ func (s *Store) GetArtifact(id string) (model.Artifact, error) {
 }
 
 func (s *Store) artifactByBuild() (map[string]*model.Artifact, error) {
-	rows, err := s.db.Query(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
-	                         FROM artifacts ORDER BY created_at DESC, rowid DESC`)
+	rows, err := s.query(`SELECT id,build_id,filename,size_bytes,sha256,md5,storage,storage_key,url,url_expires_at,local_path,created_at
+	                         FROM artifacts ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -663,23 +510,13 @@ func (s *Store) artifactByBuild() (map[string]*model.Artifact, error) {
 	return out, rows.Err()
 }
 
-func placeholders(n int) string {
-	buf := make([]byte, 0, n*2)
-	for i := range n {
-		if i > 0 {
-			buf = append(buf, ',')
-		}
-		buf = append(buf, '?')
-	}
-	return string(buf)
-}
 
 // --- Settings -----------------------------------------------------------
 
 // GetSetting returns a settings row, or an empty string when unset.
 func (s *Store) GetSetting(key string) (string, error) {
 	var value string
-	err := s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&value)
+	err := s.queryRow(`SELECT value FROM settings WHERE key=?`, key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -688,8 +525,7 @@ func (s *Store) GetSetting(key string) (string, error) {
 
 // SetSetting writes a settings row.
 func (s *Store) SetSetting(key, value string) error {
-	_, err := s.db.Exec(`INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
-	                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`,
-		key, value, Now())
+	_, err := s.exec(`INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
+	                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, Now())
 	return err
 }

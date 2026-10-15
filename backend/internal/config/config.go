@@ -26,6 +26,8 @@ type Config struct {
 	BuildDir    string
 	KickDir     string
 	ArtifactDir string
+	// DatabaseURL selects PostgreSQL when non-empty; empty → embedded SQLite at DBPath.
+	DatabaseURL string
 	DBPath      string
 
 	MaxUploadBytes      int64
@@ -79,6 +81,7 @@ func Load() (Config, error) {
 		BuildDir:    filepath.Join(dataDir, "builds"),
 		KickDir:     filepath.Join(dataDir, "kickstarts"),
 		ArtifactDir: filepath.Join(dataDir, "artifacts"),
+		DatabaseURL: strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL")),
 		DBPath:      filepath.Join(dataDir, "isobuilder.db"),
 
 		MaxUploadBytes:      envBytes("ISOBUILDER_MAX_UPLOAD_BYTES", 40<<30),

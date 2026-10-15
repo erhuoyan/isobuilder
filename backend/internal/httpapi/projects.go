@@ -12,6 +12,10 @@ import (
 	"isobuilder/internal/store"
 )
 
+// maxPostScriptBytes bounds the project-level post-install script. It is
+// base64-encoded into the kickstart, so 64 KiB is already generous.
+const maxPostScriptBytes = 64 << 10
+
 // projectRequest is the create/update payload. Pointer fields distinguish
 // "absent" from "empty" on update.
 type projectRequest struct {
@@ -22,6 +26,7 @@ type projectRequest struct {
 	KickstartID *string `json:"kickstart_id"`
 	IsoLabel    *string `json:"iso_label"`
 	OutputName  *string `json:"output_name"`
+	PostScript  *string `json:"post_script"`
 	HostsRaw    *string `json:"hosts_raw"`
 	HostsFormat *string `json:"hosts_format"`
 }
@@ -268,6 +273,13 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 		return p, newAPIErr(http.StatusBadRequest, "invalid_iso_label", "iso_label 超过 32 个字符")
 	}
 
+	// post_script: 省略 = 不变；传值（含空串）= 覆盖。base64 编码注入 KS，这里只限大小。
+	postScript := pick(req.PostScript, p.PostScript)
+	if len(postScript) > maxPostScriptBytes {
+		return p, newAPIErr(http.StatusBadRequest, "invalid_post_script",
+			fmt.Sprintf("装机后脚本超过 %d 字节", maxPostScriptBytes))
+	}
+	p.PostScript = postScript
 	raw := pick(req.HostsRaw, p.HostsRaw)
 	format := pick(req.HostsFormat, p.HostsFormat)
 	if format == "" || format == "auto" {

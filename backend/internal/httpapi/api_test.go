@@ -68,6 +68,25 @@ func postJSON(t *testing.T, url string, body any) *http.Response {
 	return resp
 }
 
+// putJSON sends a JSON PUT request.
+func putJSON(t *testing.T, url string, body any) *http.Response {
+	t.Helper()
+	payload, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("PUT %s: %v", url, err)
+	}
+	return resp
+}
+
 // postMultipart sends a multipart form with one file field plus extras.
 func postMultipart(t *testing.T, url, field, filename, content string, extra map[string]string) *http.Response {
 	t.Helper()

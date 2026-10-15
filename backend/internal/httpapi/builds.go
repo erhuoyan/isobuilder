@@ -85,6 +85,7 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 		HostsJSON:   p.HostsJSON,
 		HostsCount:  p.HostsCount,
 		OutputName:  p.OutputName,
+		PostScript:  p.PostScript,
 		CreatedAt:   store.Now(),
 	}
 	if b.OutputName == "" {

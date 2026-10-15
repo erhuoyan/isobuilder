@@ -68,6 +68,7 @@
   "kickstart": { ...Kickstart... }, // 只读内联展开
   "iso_label": "Rocky-9-8-x86_64",  // 允许为空 → 构建时从原版 ISO 自动探测
   "output_name": "Rocky-9.8-x86_64-auto.iso",  // 允许为空 → 构建时自动生成
+  "post_script": "#!/bin/bash\n...", // 项目级装机后脚本，允许为空 → 不注入
   "hosts_format": "yaml",           // "yaml" | "json"  —— hosts_raw 的原始格式
   "hosts_raw": "hosts:\n- sn: ...", // 用户上传/编辑的原文（YAML 或 JSON）
   "hosts_count": 3,                 // 校验通过的主机台数
@@ -240,14 +241,16 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
   "description": "...",
   "arch": "x86_64",
   "iso_id": "3f9a1c0b7d21",
-  "kickstart_id": "0a1b2c3d4e5f",
   "iso_label": "",
   "output_name": "",
+  "post_script": "",                // 可选；省略 = 不变，空串 = 清除；>64KiB → 400 invalid_post_script
   "hosts_raw": "hosts:\n- sn: ...",
   "hosts_format": "auto"            // "auto" | "yaml" | "json"
 }
 ```
 校验失败 → `400 invalid_hosts`，`details.hosts = [{index, field, message}, ...]`。
+
+`post_script` 说明：构建时以 base64 编码追加为独立的 `%post` 段（chroot 内执行），排在模板原有 `%post` 之后；脚本内容、输出与退出码分别落盘到装机机的 `/var/log/isobuilder/post.sh`、`post.log`、`post.exit`。脚本失败不影响安装结果。
 
 `POST /api/validate/hosts` 响应：
 ```json

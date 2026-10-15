@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: isobuilder
+  namespace: isobuilder
+  labels:
+    app.kubernetes.io/name: isobuilder
+spec:
+  # 默认集群内访问；对外暴露二选一：改 type: NodePort/LoadBalancer，
+  # 或另建 Ingress（注意 SSE 日志流需要关闭代理缓冲）。
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: isobuilder
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

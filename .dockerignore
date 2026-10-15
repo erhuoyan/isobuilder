@@ -1,17 +1,23 @@
 .git
 .omp
 .omp/*
-diagram
+
+# 构建产物与临时目录
+release
+data
+frontend/node_modules
+frontend/dist
+backend/dist-linux-amd64
+backend/dist-linux-arm64
+
+# 本地主机清单可能含 root 密码，绝不进镜像上下文
+hosts*.yaml
+
+# 仓库文档与示意图
 docs
+README.md
+HANDOVER.md
 *.svg
 *.excalidraw
 *.png
 blog.md
-README.md
-hosts*.yaml
-
-isobuilder/docs
-isobuilder/frontend/node_modules
-isobuilder/frontend/dist
-isobuilder/backend/web
-data

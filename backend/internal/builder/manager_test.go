@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -34,11 +35,7 @@ func newTestManager(t *testing.T) (*Manager, *store.Store) {
 	if err := os.MkdirAll(cfg.WorkDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	st, err := store.Open(filepath.Join(root, "test.db"))
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := store.OpenTest(t, filepath.Join(root, "test.db"))
 	m := NewManager(cfg, st, storage.NewSwitcher(storage.New(cfg.Storage)))
 	m.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	return m, st
@@ -184,6 +181,55 @@ Volume Set Id:
 	}
 	if got := trimSpace(m[1]); got != "ROCKYFAKE" {
 		t.Fatalf("label = %q, want ROCKYFAKE", got)
+	}
+}
+
+// TestRenderPostScript pins the kickstart section injected for a project-level
+// post script: it must be an independent %post block appended after the
+// template, carry the script base64-encoded (so no special character can
+// corrupt the kickstart), and record the exit code without failing the install.
+func TestRenderPostScript(t *testing.T) {
+	script := "#!/bin/bash\necho 100% done\nyum install -y htop"
+	out := renderPostScript(script)
+
+	if !strings.HasPrefix(out, "\n\n%post --interpreter=/bin/bash\n") {
+		t.Fatalf("must be an independent %%post section, got prefix %q", out[:30])
+	}
+	if !strings.HasSuffix(out, "%end\n") {
+		t.Fatalf("section must end with %%end, got %q", out[len(out)-10:])
+	}
+
+	// The encoded body must decode back to the original script exactly.
+	lines := strings.Split(out, "\n")
+	var b64 strings.Builder
+	inBlock := false
+	for _, l := range lines {
+		if strings.HasPrefix(l, "base64 -d") {
+			inBlock = true
+			continue
+		}
+		if inBlock {
+			if l == "ISOBUILDER_POST_EOF" {
+				break
+			}
+			b64.WriteString(l)
+		}
+	}
+	b, err := base64.StdEncoding.DecodeString(b64.String())
+	if err != nil {
+		t.Fatalf("injected base64 does not decode: %v", err)
+	}
+	if string(b) != script {
+		t.Fatalf("decoded script = %q, want %q", string(b), script)
+	}
+
+	// Must persist the exit code via PIPESTATUS (not $?), so a piped tee does
+	// not mask the script's own failure.
+	if !strings.Contains(out, "PIPESTATUS[0]") {
+		t.Fatal("exit code must be recorded via PIPESTATUS[0]")
+	}
+	if !strings.Contains(out, "/var/log/isobuilder/post.exit") {
+		t.Fatal("exit code must be written to /var/log/isobuilder/post.exit")
 	}
 }
 

@@ -1,0 +1,104 @@
+# isobuilder Deployment
+#
+# replicas 恒为 1，不是保守而是硬约束：
+#   1. 构建是单进程串行队列，启动时会把遗留的 queued/running 构建标记为失败，
+#      第二个副本会把第一个副本正在跑的构建判死。
+#   2. 所有副本共享同一个 /data 子目录（subPath），并发挂载会互相踩工作目录。
+# 需要吞吐时提高 ISOBUILDER_MAX_CONCURRENT_BUILDS（受 /data 容量与 I/O 约束）。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: isobuilder
+  namespace: isobuilder
+  labels:
+    app.kubernetes.io/name: isobuilder
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # 新旧 Pod 不得同时挂载同一 subPath
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: isobuilder
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: isobuilder
+    spec:
+      # NFS 的 subPath 挂载要求目标目录已存在，否则 Pod 起不来。
+      # 先整卷挂一次，创建本服务的子目录，主容器再用 subPath 挂进去。
+      initContainers:
+        - name: ensure-data-dir
+          image: isobuilder:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "mkdir -p /mnt/nfs/isobuilder"]
+          volumeMounts:
+            - name: nfs
+              mountPath: /mnt/nfs
+      containers:
+        - name: isobuilder
+          image: isobuilder:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ISOBUILDER_ADDR
+              value: ":8080"
+            - name: ISOBUILDER_DATA_DIR
+              value: /data
+            # PostgreSQL：数据库在云 RDS 上，Pod 无状态，仅 /data 走 PV。
+            # 留空则退回容器内 SQLite（单文件在 /data，不推荐用于多环境下重放）。
+            - name: ISOBUILDER_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: isobuilder-db
+                  key: url
+            # 可选：设置后 API 需要 Authorization: Bearer <token>。
+            - name: ISOBUILDER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: isobuilder-db
+                  key: auth_token
+                  optional: true
+            # 并发构建数：每个构建峰值约占 2×基础 ISO 的空间与 I/O。
+            - name: ISOBUILDER_MAX_CONCURRENT_BUILDS
+              value: "1"
+          volumeMounts:
+            - name: nfs
+              mountPath: /data
+              subPath: isobuilder    # 落到 NFS 的 /data/nfs-provisioner/isobuilder
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # 存活探测给足余量：构建期间 CPU 打满，进程仍应响应 /api/health。
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+            limits:
+              # xorriso 解包/重建是 CPU + 顺序 I/O 密集；不设上限会把节点拖满。
+              cpu: "4"
+              memory: 4Gi
+          securityContext:
+            # NFS 以 no_root_squash 导出，root 可直接写卷；ISO 流水线也按 root 预期。
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          # 收到 SIGTERM 后 CancelAll + 优雅关停；构建本身耗时长，给足退出窗口。
+          terminationGracePeriodSeconds: 60
+      volumes:
+        - name: nfs
+          persistentVolumeClaim:
+            claimName: nfs-shared

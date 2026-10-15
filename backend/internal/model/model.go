@@ -107,6 +107,7 @@ type Project struct {
 	Kickstart    *Kickstart    `json:"kickstart"`
 	IsoLabel     string        `json:"iso_label"`
 	OutputName   string        `json:"output_name"`
+	PostScript   string        `json:"post_script"`
 	HostsFormat  string        `json:"hosts_format"`
 	HostsRaw     string        `json:"hosts_raw,omitempty"`
 	HostsJSON    string        `json:"-"`
@@ -144,6 +145,7 @@ type Build struct {
 	KSID        string `json:"-"`
 	KSPath      string `json:"-"`
 	HostsJSON   string `json:"-"`
+	PostScript  string `json:"-"`
 	ArtifactID  string `json:"-"`
 	Description string `json:"-"`
 }

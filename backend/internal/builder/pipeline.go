@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -258,6 +259,15 @@ func (m *Manager) injectKickstart(pub *publisher, treeDir string, b model.Build)
 	}
 	rendered := strings.ReplaceAll(text, placeholder, b.HostsJSON)
 
+	// A project-level post script is appended as an independent %post section.
+	// The script body is base64-encoded so no character in it (%, quotes,
+	// heredocs of its own) can break the kickstart syntax. It runs after every
+	// %post in the template, i.e. once network config is already written.
+	if strings.TrimSpace(b.PostScript) != "" {
+		rendered += renderPostScript(b.PostScript)
+		pub.logf("已追加装机后脚本（%s）", humanBytes(int64(len(b.PostScript))))
+	}
+
 	ksRel := "ks/" + filepath.Base(ksSrc.Name)
 	dest := filepath.Join(treeDir, filepath.FromSlash(ksRel))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
@@ -273,6 +283,25 @@ func (m *Manager) injectKickstart(pub *publisher, treeDir string, b model.Build)
 	_ = json.Unmarshal([]byte(b.HostsJSON), &doc)
 	pub.logf("已注入 kickstart: /%s（%d 台主机，%s 字节）", ksRel, len(doc.Hosts), humanBytes(int64(len(rendered))))
 	return ksRel, nil
+}
+
+// renderPostScript wraps an operator-supplied shell script into a chrooted
+// %post section. The script is stored under /var/log/isobuilder/ on the
+// installed system together with its log and exit code, so an operator can
+// audit what ran long after the install console is gone. A non-zero exit is
+// logged but never fails the install: the OS is already fully installed at
+// this point.
+func renderPostScript(script string) string {
+	return "\n\n%post --interpreter=/bin/bash\n" +
+		"# --- isobuilder: project post-install script ---\n" +
+		"mkdir -p /var/log/isobuilder\n" +
+		"base64 -d << 'ISOBUILDER_POST_EOF' > /var/log/isobuilder/post.sh\n" +
+		base64.StdEncoding.EncodeToString([]byte(script)) + "\n" +
+		"ISOBUILDER_POST_EOF\n" +
+		"chmod +x /var/log/isobuilder/post.sh\n" +
+		"bash /var/log/isobuilder/post.sh 2>&1 | tee -a /var/log/isobuilder/post.log\n" +
+		"echo ${PIPESTATUS[0]} > /var/log/isobuilder/post.exit\n" +
+		"%end\n"
 }
 
 // inspectISO reads the volume label of a base image with xorriso, sparing the

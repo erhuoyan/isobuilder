@@ -239,6 +239,8 @@ declare namespace Api {
       kickstart: Kickstart | null;
       iso_label: string;
       output_name: string;
+      /** the project-level post-install script, empty when not configured */
+      post_script: string;
       hosts_format: HostsFormat;
       /** the raw inventory, it is not returned by `GET /api/projects` */
       hosts_raw: string;
@@ -257,6 +259,8 @@ declare namespace Api {
       kickstart_id: string;
       iso_label: string;
       output_name: string;
+      /** the post-install script, omitted/empty when not configured */
+      post_script?: string;
       hosts_raw: string;
       hosts_format: HostsFormatInput;
     }

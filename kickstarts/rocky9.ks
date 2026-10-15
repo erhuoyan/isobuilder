@@ -28,6 +28,10 @@ services --disabled="chronyd"
 @^minimal-environment
 wget
 curl
+tar
+unzip
+vim
+bash-completion
 %end
 
 %pre --interpreter=/bin/bash

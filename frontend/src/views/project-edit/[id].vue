@@ -22,6 +22,7 @@ const form = ref({ name: '', description: '', iso_label: '', output_name: '' });
 const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
+const postScript = ref('');
 
 /** 基础镜像与应答模板随项目绑定存在，编辑页只展示；如需更换应新建项目 */
 const isoLabel = computed(() => {
@@ -71,6 +72,7 @@ async function loadProject() {
   };
   hostsRaw.value = data.project.hosts_raw;
   hostsFormat.value = data.project.hosts_format;
+  postScript.value = data.project.post_script;
 }
 
 async function handleSave() {
@@ -83,8 +85,8 @@ async function handleSave() {
     description: form.value.description.trim(),
     iso_label: form.value.iso_label.trim(),
     output_name: form.value.output_name.trim(),
+    post_script: postScript.value,
     hosts_raw: hostsRaw.value,
-    hosts_format: hostsFormat.value
   });
 
   saving.value = false;
@@ -160,6 +162,19 @@ onMounted(async () => {
                   <NInput v-model:value="form.output_name" placeholder="留空 → 构建时自动生成" />
                 </NFormItemGi>
               </NGrid>
+            </NForm>
+          </NCollapseItem>
+          <NCollapseItem title="装机后脚本" name="post-script">
+            <NForm size="small" label-placement="top" :show-feedback="false">
+              <NFormItem label="post_script">
+                <NInput
+                  v-model:value="postScript"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="留空则不执行任何自定义脚本。建议以 #!/bin/bash 开头。"
+                  class="font-mono"
+                />
+              </NFormItem>
             </NForm>
           </NCollapseItem>
         </NCollapse>

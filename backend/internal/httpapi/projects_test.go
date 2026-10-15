@@ -38,11 +38,7 @@ func newTestServer(t *testing.T) (*httptest.Server, string) {
 		t.Fatal(err)
 	}
 
-	st, err := store.Open(cfg.DBPath)
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := store.OpenTest(t, cfg.DBPath)
 
 	blob := storage.NewSwitcher(storage.New(cfg.Storage))
 	api := New(cfg, st, managerStub(t, cfg, st), blob, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -334,5 +330,77 @@ func TestArtifactLocalDownload(t *testing.T) {
 	code, _, _ := failBody(t, resp)
 	if code != "not_found" {
 		t.Fatalf("code = %q, want not_found", code)
+	}
+}
+
+// TestProjectPostScriptRoundTrip pins the create → read → update lifecycle of
+// the project-level post_script: it must survive persistence, an absent field
+// in a later update must not wipe it, and an explicit "" must.
+func TestProjectPostScriptRoundTrip(t *testing.T) {
+	ts, isoDir := newTestServer(t)
+	defer ts.Close()
+	isoID := seedISO(t, ts, isoDir)
+	ksID := seedKickstart(t, ts)
+
+	script := "#!/bin/bash\nyum install -y htop\necho done"
+
+	// 1. create with a script
+	resp := postJSON(t, ts.URL+"/api/projects", map[string]any{
+		"name": "ps1", "arch": "x86_64", "iso_id": isoID, "kickstart_id": ksID,
+		"hosts_raw": validHosts, "hosts_format": "auto", "post_script": script,
+	})
+	var created struct {
+		Project model.Project `json:"project"`
+	}
+	decode(t, resp, &created)
+	if created.Project.PostScript != script {
+		t.Fatalf("post_script lost in create: got %q", created.Project.PostScript)
+	}
+
+	// 2. fetch back
+	resp = get(t, ts.URL+"/api/projects/"+created.Project.ID)
+	var fetched struct {
+		Project model.Project `json:"project"`
+	}
+	decode(t, resp, &fetched)
+	if fetched.Project.PostScript != script {
+		t.Fatalf("post_script lost after fetch: got %q", fetched.Project.PostScript)
+	}
+
+	// 3. update (PUT) without post_script → unchanged
+	resp = putJSON(t, ts.URL+"/api/projects/"+created.Project.ID, map[string]any{
+		"name": "ps1-renamed", "hosts_raw": validHosts,
+	})
+	decode(t, resp, &fetched)
+	if fetched.Project.PostScript != script {
+		t.Fatalf("post_script must survive an update that omits it: got %q", fetched.Project.PostScript)
+	}
+
+	// 4. update (PUT) with "" → cleared
+	resp = putJSON(t, ts.URL+"/api/projects/"+created.Project.ID, map[string]any{
+		"name": "ps1-cleared", "hosts_raw": validHosts, "post_script": "",
+	})
+	decode(t, resp, &fetched)
+	if fetched.Project.PostScript != "" {
+		t.Fatalf("post_script must be cleared by an explicit empty string: got %q", fetched.Project.PostScript)
+	}
+}
+
+// TestProjectPostScriptTooLarge guards the size bound: a script bigger than
+// maxPostScriptBytes must be rejected at validation, not baked into the ISO.
+func TestProjectPostScriptTooLarge(t *testing.T) {
+	ts, isoDir := newTestServer(t)
+	defer ts.Close()
+	isoID := seedISO(t, ts, isoDir)
+	ksID := seedKickstart(t, ts)
+
+	big := strings.Repeat("x", maxPostScriptBytes+1)
+	resp := postJSON(t, ts.URL+"/api/projects", map[string]any{
+		"name": "ps-big", "arch": "x86_64", "iso_id": isoID, "kickstart_id": ksID,
+		"hosts_raw": validHosts, "post_script": big,
+	})
+	code, _, _ := failBody(t, resp)
+	if code != "invalid_post_script" {
+		t.Fatalf("code = %q, want invalid_post_script", code)
 	}
 }

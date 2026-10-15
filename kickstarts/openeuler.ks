@@ -30,6 +30,9 @@ services --disabled="chronyd"
 wget
 curl
 tar
+unzip
+vim
+bash-completion
 %end
 
 %pre --interpreter=/bin/bash

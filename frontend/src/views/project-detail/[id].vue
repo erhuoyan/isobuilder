@@ -255,6 +255,10 @@ onMounted(async () => {
           <NDescriptionsItem label="输出文件名">
             <span class="font-mono">{{ project.output_name || '（构建时自动生成）' }}</span>
           </NDescriptionsItem>
+          <NDescriptionsItem label="装机后脚本">
+            <NTag v-if="project.post_script" size="small" type="success" :bordered="false">已配置</NTag>
+            <span v-else class="text-gray-400">未配置</span>
+          </NDescriptionsItem>
           <NDescriptionsItem label="主机清单">
             <span class="font-mono">{{ project.hosts_count }} 台</span>
             <span class="ml-6px text-12px text-gray-500">{{ project.hosts_format.toUpperCase() }}</span>
