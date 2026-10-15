@@ -98,6 +98,7 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 		HostsCount:  p.HostsCount,
 		OutputName:  p.OutputName,
 		PostScript:  postScript,
+		PayloadMode: p.PayloadMode,
 		CreatedAt:   store.Now(),
 	}
 	if b.OutputName == "" {

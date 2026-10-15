@@ -158,6 +158,9 @@ if [ -f /tmp/provision.json ]; then
         echo "Hostname set: $MY_HOSTNAME" >> /mnt/sysimage/var/log/pxe-install.log
     fi
 fi
+
+# --- U 盘 payload 注入（可选，由项目 payload_mode 决定；off 时为一行注释）---
+%%PAYLOAD_SNIPPET%%
 %end
 
 %post --interpreter=/bin/bash

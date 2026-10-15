@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import type { SelectOption } from 'naive-ui';
 import {
   fetchCreateProject,
   fetchGetIsos,
@@ -45,8 +46,14 @@ const form = ref({
   iso_id: '',
   kickstart_id: '',
   iso_label: '',
-  output_name: ''
+  output_name: '',
+  payload_mode: 'off' as Api.IsoBuilder.PayloadMode
 });
+const payloadModeOptions: SelectOption[] = [
+  { label: '不注入（默认）', value: 'off' },
+  { label: '按卷标查找 U 盘分区', value: 'label' },
+  { label: '卷标优先，未命中则扫描', value: 'auto' }
+];
 const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
@@ -209,6 +216,7 @@ async function handleSave() {
     output_name: form.value.output_name.trim(),
     post_script: postScript.value,
     script_id: selectedScriptId.value,
+    payload_mode: form.value.payload_mode,
     hosts_raw: hostsRaw.value,
     hosts_format: hostsFormat.value
   };
@@ -218,7 +226,6 @@ async function handleSave() {
   saving.value = false;
 
   if (error) return;
-
   window.$message?.success('项目已创建');
   routerPushByKey('project-detail', { params: { id: data.project.id } });
 }
@@ -576,6 +583,9 @@ onMounted(async () => {
               clearable
               placeholder="从脚本库选一个可复用脚本；也可只在下方写本项目专属脚本"
             />
+          </NFormItem>
+          <NFormItem label="从 U 盘注入文件（可选）">
+            <NSelect v-model:value="form.payload_mode" :options="payloadModeOptions" />
           </NFormItem>
           <NFormItem label="本项目追加脚本（可选）">
             <NInput

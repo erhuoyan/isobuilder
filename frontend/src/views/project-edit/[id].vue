@@ -18,7 +18,7 @@ const project = ref<Api.IsoBuilder.Project | null>(null);
 const isos = ref<Api.IsoBuilder.Iso[]>([]);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
 
-const form = ref({ name: '', description: '', iso_label: '', output_name: '' });
+const form = ref({ name: '', description: '', iso_label: '', output_name: '', payload_mode: 'off' as Api.IsoBuilder.PayloadMode });
 const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
@@ -67,12 +67,12 @@ async function loadProject() {
     return;
   }
 
-  project.value = data.project;
   form.value = {
     name: data.project.name,
     description: data.project.description,
     iso_label: data.project.iso_label,
-    output_name: data.project.output_name
+    output_name: data.project.output_name,
+    payload_mode: data.project.payload_mode || 'off'
   };
   hostsRaw.value = data.project.hosts_raw;
   hostsFormat.value = data.project.hosts_format;
@@ -92,6 +92,7 @@ async function handleSave() {
     output_name: form.value.output_name.trim(),
     post_script: postScript.value,
     script_id: selectedScriptId.value,
+    payload_mode: form.value.payload_mode,
     hosts_raw: hostsRaw.value,
     hosts_format: hostsFormat.value
   });
@@ -182,6 +183,16 @@ onMounted(async () => {
                   :options="scriptOptions"
                   clearable
                   placeholder="从脚本库选一个；也可只用下方追加脚本"
+                />
+              </NFormItem>
+              <NFormItem label="从 U 盘注入文件（可选）">
+                <NSelect
+                  v-model:value="form.payload_mode"
+                  :options="[
+                    { label: '不注入（默认）', value: 'off' },
+                    { label: '按卷标查找 U 盘分区', value: 'label' },
+                    { label: '卷标优先，未命中则扫描', value: 'auto' }
+                  ]"
                 />
               </NFormItem>
               <NFormItem label="本项目追加脚本">

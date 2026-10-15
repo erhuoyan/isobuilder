@@ -195,7 +195,7 @@ func (s *Store) CountProjectsUsingScript(id string) (int, error) {
 
 // --- Project ------------------------------------------------------------
 
-const projectCols = `id,name,description,arch,iso_id,kickstart_id,script_id,iso_label,output_name,post_script,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
+const projectCols = `id,name,description,arch,iso_id,kickstart_id,script_id,iso_label,output_name,post_script,payload_mode,hosts_format,hosts_raw,hosts_json,hosts_count,hosts_summary,created_at,updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -203,7 +203,7 @@ func scanProject(sc scanner) (model.Project, error) {
 	var p model.Project
 	var summary string
 	err := sc.Scan(&p.ID, &p.Name, &p.Description, &p.Arch, &p.IsoID, &p.KickstartID, &p.ScriptID, &p.IsoLabel,
-		&p.OutputName, &p.PostScript, &p.HostsFormat, &p.HostsRaw, &p.HostsJSON, &p.HostsCount, &summary, &p.CreatedAt, &p.UpdatedAt)
+		&p.OutputName, &p.PostScript, &p.PayloadMode, &p.HostsFormat, &p.HostsRaw, &p.HostsJSON, &p.HostsCount, &summary, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return p, err
 	}
@@ -311,16 +311,16 @@ func (s *Store) SaveProject(p model.Project, insert bool) error {
 		return err
 	}
 	if insert {
-		_, err = s.exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		_, err = s.exec(`INSERT INTO projects(`+projectCols+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			p.ID, p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.ScriptID, p.IsoLabel, p.OutputName,
-			p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.CreatedAt, p.UpdatedAt)
+			p.PostScript, p.PayloadMode, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.CreatedAt, p.UpdatedAt)
 		return err
 	}
 	_, err = s.exec(`UPDATE projects SET name=?, description=?, arch=?, iso_id=?, kickstart_id=?, script_id=?,
-	                    iso_label=?, output_name=?, post_script=?, hosts_format=?, hosts_raw=?, hosts_json=?,
+	                    iso_label=?, output_name=?, post_script=?, payload_mode=?, hosts_format=?, hosts_raw=?, hosts_json=?,
 	                    hosts_count=?, hosts_summary=?, updated_at=? WHERE id=?`,
 		p.Name, p.Description, p.Arch, p.IsoID, p.KickstartID, p.ScriptID, p.IsoLabel, p.OutputName,
-		p.PostScript, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.UpdatedAt, p.ID)
+		p.PostScript, p.PayloadMode, p.HostsFormat, p.HostsRaw, p.HostsJSON, p.HostsCount, string(summary), p.UpdatedAt, p.ID)
 	return err
 }
 
@@ -364,13 +364,13 @@ func (s *Store) count(query string, args ...any) (int, error) {
 // --- Build --------------------------------------------------------------
 
 const buildCols = `id,project_id,project_name,status,stage,stage_index,stage_total,progress,arch,iso_id,iso_name,
-iso_label,kickstart_id,hosts_json,hosts_count,output_name,post_script,work_dir,error,artifact_id,created_at,started_at,finished_at`
+iso_label,kickstart_id,hosts_json,hosts_count,output_name,post_script,payload_mode,work_dir,error,artifact_id,created_at,started_at,finished_at`
 
 func scanBuild(sc scanner) (model.Build, error) {
 	var b model.Build
 	err := sc.Scan(&b.ID, &b.ProjectID, &b.ProjectName, &b.Status, &b.Stage, &b.StageIndex, &b.StageTotal,
 		&b.Progress, &b.Arch, &b.IsoPath, &b.IsoName, &b.IsoLabel, &b.KSID, &b.HostsJSON, &b.HostsCount,
-		&b.OutputName, &b.PostScript, &b.WorkDir, &b.Error, &b.ArtifactID, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
+		&b.OutputName, &b.PostScript, &b.PayloadMode, &b.WorkDir, &b.Error, &b.ArtifactID, &b.CreatedAt, &b.StartedAt, &b.FinishedAt)
 	if err != nil {
 		return b, err
 	}
@@ -382,9 +382,9 @@ func scanBuild(sc scanner) (model.Build, error) {
 // CreateBuild inserts a queued build. The build row snapshots everything the
 // worker needs so a project edit mid-build cannot change the outcome.
 func (s *Store) CreateBuild(b model.Build) error {
-	_, err := s.exec(`INSERT INTO builds(`+buildCols+`) VALUES(`+s.placeholders(23)+`)`, b.ID, b.ProjectID, b.ProjectName, b.Status, b.Stage, b.StageIndex, b.StageTotal, b.Progress,
+	_, err := s.exec(`INSERT INTO builds(`+buildCols+`) VALUES(`+s.placeholders(24)+`)`, b.ID, b.ProjectID, b.ProjectName, b.Status, b.Stage, b.StageIndex, b.StageTotal, b.Progress,
 		b.Arch, b.IsoPath, b.IsoName, b.IsoLabel, b.KSID, b.HostsJSON, b.HostsCount, b.OutputName,
-		b.PostScript, b.WorkDir, b.Error, b.ArtifactID, b.CreatedAt, b.StartedAt, b.FinishedAt)
+		b.PostScript, b.PayloadMode, b.WorkDir, b.Error, b.ArtifactID, b.CreatedAt, b.StartedAt, b.FinishedAt)
 	return err
 }
 

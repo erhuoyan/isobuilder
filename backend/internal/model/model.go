@@ -122,6 +122,7 @@ type Project struct {
 	IsoLabel     string        `json:"iso_label"`
 	OutputName   string        `json:"output_name"`
 	PostScript   string        `json:"post_script"`
+	PayloadMode  string        `json:"payload_mode"`
 	HostsFormat  string        `json:"hosts_format"`
 	HostsRaw     string        `json:"hosts_raw,omitempty"`
 	HostsJSON    string        `json:"-"`
@@ -160,6 +161,7 @@ type Build struct {
 	KSPath      string `json:"-"`
 	HostsJSON   string `json:"-"`
 	PostScript  string `json:"-"`
+	PayloadMode string `json:"-"`
 	ArtifactID  string `json:"-"`
 	Description string `json:"-"`
 }

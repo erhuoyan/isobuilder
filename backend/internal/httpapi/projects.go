@@ -28,6 +28,7 @@ type projectRequest struct {
 	IsoLabel    *string `json:"iso_label"`
 	OutputName  *string `json:"output_name"`
 	PostScript  *string `json:"post_script"`
+	PayloadMode *string `json:"payload_mode"`
 	HostsRaw    *string `json:"hosts_raw"`
 	HostsFormat *string `json:"hosts_format"`
 }
@@ -290,6 +291,20 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 		}
 	}
 	p.ScriptID = scriptID
+
+	// payload_mode: 可选的 U 盘文件注入。省略 = 不变。
+	//   off   —— 不注入（默认，模板里的占位符替换成一行注释）
+	//   label —— 只按卷标 ISOBUILDER_PAYLOAD 找分区
+	//   auto  —— 卷标优先，未命中再扫描非目标盘
+	payloadMode := pick(req.PayloadMode, p.PayloadMode)
+	if payloadMode == "" {
+		payloadMode = "off"
+	}
+	if payloadMode != "off" && payloadMode != "label" && payloadMode != "auto" {
+		return p, newAPIErr(http.StatusBadRequest, "invalid_payload_mode",
+			`payload_mode 必须是 "off"、"label" 或 "auto"`)
+	}
+	p.PayloadMode = payloadMode
 	raw := pick(req.HostsRaw, p.HostsRaw)
 	format := pick(req.HostsFormat, p.HostsFormat)
 	if format == "" || format == "auto" {

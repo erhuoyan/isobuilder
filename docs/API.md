@@ -84,6 +84,7 @@
   "iso_label": "Rocky-9-8-x86_64",  // 允许为空 → 构建时从原版 ISO 自动探测
   "output_name": "Rocky-9.8-x86_64-auto.iso",  // 允许为空 → 构建时自动生成
   "post_script": "#!/bin/bash\n...", // 项目级装机后脚本，允许为空 → 不注入
+  "payload_mode": "off",             // U 盘文件注入：off(默认) | label | auto
   "hosts_format": "yaml",           // "yaml" | "json"  —— hosts_raw 的原始格式
   "hosts_raw": "hosts:\n- sn: ...", // 用户上传/编辑的原文（YAML 或 JSON）
   "hosts_count": 3,                 // 校验通过的主机台数
@@ -268,6 +269,7 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
   "output_name": "",
   "script_id": "",                  // 可选；引用脚本库；省略 = 不变，空串 = 解除绑定
   "post_script": "",                // 可选；省略 = 不变，空串 = 清除；>64KiB → 400 invalid_post_script
+  "payload_mode": "off",            // 可选；"off" | "label" | "auto"，省略 = 不变
   "hosts_raw": "hosts:\n- sn: ...",
   "hosts_format": "auto"            // "auto" | "yaml" | "json"
 }
@@ -275,6 +277,22 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
 校验失败 → `400 invalid_hosts`，`details.hosts = [{index, field, message}, ...]`。
 
 `post_script` / `script_id` 说明：构建时把「脚本库脚本 + 项目追加脚本」合并为一段，以 base64 编码追加为独立的 `%post` 段（chroot 内执行），排在模板原有 `%post` 之后；**库脚本在前，项目追加脚本在后**。合并结果快照进构建记录，之后改脚本库或改项目都不影响已入队的构建。内容、输出与退出码分别落盘到装机机的 `/var/log/isobuilder/post.sh`、`post.log`、`post.exit`。脚本失败不影响安装结果。
+
+`payload_mode` 说明（可选的「从 U 盘注入文件」，默认关闭）：安装时把 U 盘上一批文件拷进新系统，
+供装机后脚本使用。开启后模板的 `%%PAYLOAD_SNIPPET%%` 占位符会被替换为对应逻辑，注入位置在
+模板已有的 `%post --nochroot` 段内（只有该阶段还能看到安装介质）。
+
+- `off` —— 不注入任何逻辑（默认）。
+- `label` —— 只按卷标 `ISOBUILDER_PAYLOAD` 查找 U 盘分区，找不到就跳过。
+- `auto` —— 卷标优先；未命中时扫描非目标磁盘的分区，找含 `payload/` 目录的并挂载。
+
+约定：U 盘上需有一个**独立分区**（Ventoy 用其「保留空间」创建），卷标设为 `ISOBUILDER_PAYLOAD`，
+内含 `payload/` 目录；文件最终落到新系统的 `/opt/payload`。
+**注意**：Ventoy 自身的数据分区启动后无法挂载（[ventoy/Ventoy#667](https://github.com/ventoy/Ventoy/issues/667)），
+因此不能把文件放在放 ISO 的那个分区里。
+
+整个过程是尽力而为：分区不存在、挂载失败或拷贝出错都只记日志，**不会导致装机失败**；
+需要彻底排除风险时把 `payload_mode` 设为 `off` 即可。
 
 `POST /api/validate/hosts` 响应：
 ```json

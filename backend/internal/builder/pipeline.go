@@ -259,6 +259,18 @@ func (m *Manager) injectKickstart(pub *publisher, treeDir string, b model.Build)
 	}
 	rendered := strings.ReplaceAll(text, placeholder, b.HostsJSON)
 
+	// U 盘 payload 注入（可选）：模板带占位符时按 payload_mode 替换。
+	// 与 hosts 占位符不同，这个是可选的 —— 老模板没有它就跳过；
+	// 有它就一定替换（off 也会替换成一行注释，避免 %%…%% 残留在脚本里）。
+	const payloadPlaceholder = "%%PAYLOAD_SNIPPET%%"
+	if strings.Contains(rendered, payloadPlaceholder) {
+		rendered = strings.ReplaceAll(rendered, payloadPlaceholder, renderPayloadSnippet(b.PayloadMode))
+		if b.PayloadMode != "" && b.PayloadMode != "off" {
+			pub.logf("已注入 U 盘 payload 拷贝逻辑（payload_mode=%s）", b.PayloadMode)
+		}
+	}
+
+
 	// A project-level post script is appended as an independent %post section.
 	// The script body is base64-encoded so no character in it (%, quotes,
 	// heredocs of its own) can break the kickstart syntax. It runs after every
@@ -302,6 +314,90 @@ func renderPostScript(script string) string {
 		"bash /var/log/isobuilder/post.sh 2>&1 | tee -a /var/log/isobuilder/post.log\n" +
 		"echo ${PIPESTATUS[0]} > /var/log/isobuilder/post.exit\n" +
 		"%end\n"
+}
+
+// renderPayloadSnippet builds the optional "copy files from the USB stick"
+// block that the template calls from its %post --nochroot section (the only
+// phase where removable media is still visible to the installer).
+//
+// Payload must live on a *separate* USB partition: Ventoy's own data partition
+// cannot be mounted after boot (ventoy/Ventoy#667), so the recommended setup is
+// a dedicated partition carved from Ventoy's reserved space, labelled
+// ISOBUILDER_PAYLOAD with a `payload/` directory inside.
+//
+// Everything is best-effort by design: no partition, an unmountable filesystem
+// or a failed copy must never fail the installation. The whole feature is
+// opt-in (payload_mode) so a site that does not want it leaves no code behind.
+func renderPayloadSnippet(mode string) string {
+	switch mode {
+	case "label":
+		return payloadScript(false)
+	case "auto":
+		return payloadScript(true)
+	default:
+		return "# payload 注入未启用（payload_mode=off）"
+	}
+}
+
+func payloadScript(scan bool) string {
+	const header = `PAYLOAD_LABEL="ISOBUILDER_PAYLOAD"
+PAYLOAD_DIR="payload"
+PAYLOAD_DEST="/mnt/sysimage/opt/payload"
+PAYLOAD_MP=/tmp/isobuilder-usb
+PAYLOAD_LOG=/mnt/sysimage/var/log/pxe-install.log
+mkdir -p "$PAYLOAD_MP" 2>/dev/null
+
+# 只读挂载，绝不在 U 盘上写任何东西；任何一步失败都只影响这一步。
+payload_try() {
+    mount -o ro "$1" "$PAYLOAD_MP" 2>/dev/null || return 1
+    if [ -d "$PAYLOAD_MP/$PAYLOAD_DIR" ]; then
+        mkdir -p "$PAYLOAD_DEST" 2>/dev/null
+        cp -a "$PAYLOAD_MP/$PAYLOAD_DIR/." "$PAYLOAD_DEST/" 2>/dev/null
+        umount "$PAYLOAD_MP" 2>/dev/null
+        return 0
+    fi
+    umount "$PAYLOAD_MP" 2>/dev/null
+    return 1
+}
+
+PAYLOAD_DONE=0
+PAYLOAD_DEV=$(blkid -L "$PAYLOAD_LABEL" 2>/dev/null || true)
+if [ -n "$PAYLOAD_DEV" ]; then
+    payload_try "$PAYLOAD_DEV" && PAYLOAD_DONE=1
+fi
+`
+
+	const fallback = `
+# 兜底扫描：卷标未命中时遍历分区找含 payload/ 的，排除目标磁盘。
+# 目标磁盘名由 %pre 写入 /tmp/ks-pre.log，避免误挂正在安装的盘。
+if [ "$PAYLOAD_DONE" = "0" ]; then
+    PAYLOAD_TARGET=$(sed -n 's/^disk=//p' /tmp/ks-pre.log 2>/dev/null | tail -1)
+    for PAYLOAD_PART in /dev/sd*[0-9] /dev/vd*[0-9] /dev/nvme*p[0-9]; do
+        [ -b "$PAYLOAD_PART" ] || continue
+        case "$PAYLOAD_PART" in
+            *"$PAYLOAD_TARGET"*) continue ;;
+        esac
+        if payload_try "$PAYLOAD_PART"; then
+            PAYLOAD_DONE=1
+            PAYLOAD_DEV="$PAYLOAD_PART"
+            break
+        fi
+    done
+fi
+`
+
+	const footer = `
+if [ "$PAYLOAD_DONE" = "1" ]; then
+    echo "payload: copied from $PAYLOAD_DEV to $PAYLOAD_DEST" >> "$PAYLOAD_LOG" 2>/dev/null
+else
+    echo "payload: no payload partition (label=$PAYLOAD_LABEL)" >> "$PAYLOAD_LOG" 2>/dev/null
+fi
+`
+
+	if scan {
+		return header + fallback + footer
+	}
+	return header + footer
 }
 
 // inspectISO reads the volume label of a base image with xorriso, sparing the

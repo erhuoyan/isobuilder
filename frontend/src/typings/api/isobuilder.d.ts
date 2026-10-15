@@ -26,6 +26,8 @@ declare namespace Api {
     /** the kickstart can be applied to any architecture */
     type KickstartArch = Arch | 'any';
 
+    /** U 盘 payload 注入模式：off 不注入 / label 按卷标 / auto 卷标优先+扫描 */
+    type PayloadMode = 'off' | 'label' | 'auto';
     /** the format of the hosts inventory */
     type HostsFormat = 'yaml' | 'json';
 
@@ -255,6 +257,8 @@ declare namespace Api {
       script: Script | null;
       iso_label: string;
       output_name: string;
+      /** U 盘 payload 注入模式：off 不注入 / label 按卷标 / auto 卷标+扫描 */
+      payload_mode: PayloadMode;
       /** the project-level post-install script, empty when not configured */
       post_script: string;
       hosts_format: HostsFormat;
@@ -277,7 +281,8 @@ declare namespace Api {
       output_name: string;
       /** id of the bound script from the library */
       script_id?: string;
-      /** the post-install script, omitted/empty when not configured */
+      /** U 盘 payload 注入模式 */
+      payload_mode?: PayloadMode;
       post_script?: string;
       hosts_raw: string;
       hosts_format: HostsFormatInput;
