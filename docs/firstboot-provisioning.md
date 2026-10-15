@@ -213,9 +213,67 @@ U 盘侧约定（配合 Ventoy）：
 3. 分区内建 `payload/` 目录
 4. 文件最终出现在新系统的 `/opt/payload`
 
+
 ---
 
-## 6. 参考
+## 6. 待验证：实测确认执行时机
+
+本文第 2、3 节的结论（`%post` 期间 Ventoy 分区挂不上、首次启动可挂）来自官方文档与
+Ventoy 作者说明，**尚未在真实 U 盘 + 目标机上实测**。实现改造前应先测，因为它直接决定
+`payload_mode` 落在哪个阶段。
+
+### 待验证假设
+
+| # | 假设 | 若为假会怎样 |
+|---|---|---|
+| H1 | `%post --nochroot` 阶段，Ventoy 数据分区**无法**挂载 | 则现有实现（安装期拷贝）其实可行，不必改 firstboot |
+| H2 | 首次启动时，同一分区**可以**正常挂载 | 若也挂不上，说明分区策略本身有问题（需重做 U 盘加独立分区） |
+| H3 | 首次启动时网络已就绪（`network-online.target` 可达） | 影响脚本能否做联网动作，不影响挂载 |
+
+### 怎么测：一次装机拿到两个阶段的对比数据
+
+在 kickstart 的 **`%post --nochroot`** 段末尾加诊断（输出到目标系统的日志里）：
+
+```bash
+{
+    echo "=== [probe] %post --nochroot ==="
+    echo "--- lsblk ---";          lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT
+    echo "--- /dev/mapper ---";    ls -l /dev/mapper/ 2>/dev/null
+    echo "--- /run/install/repo ---"; ls /run/install/repo 2>/dev/null | head -5
+    echo "--- blkid ---";          blkid
+    echo "--- 逐个尝试只读挂载非目标盘 ---"
+    for p in /dev/sd*[0-9] /dev/nvme*p[0-9]; do
+        [ -b "$p" ] || continue
+        if mount -o ro "$p" /mnt 2>/dev/null; then
+            echo "OK   $p -> $(ls /mnt | head -3 | tr '\n' ' ')"
+            umount /mnt 2>/dev/null
+        else
+            echo "FAIL $p"
+        fi
+    done
+} > /mnt/sysimage/var/log/probe-post.log 2>&1
+```
+
+再在**首次启动**放一份相同诊断（systemd oneshot，输出到 `/var/log/probe-firstboot.log`）。
+装一次机、重启一次，就能拿到两个阶段的完整对照。
+
+### 判定与对应实现
+
+| 实测结果 | 结论 |
+|---|---|
+| H1 成立、H2 成立 | ✅ 采用**首次启动**执行（本文推荐）—— 现有实现需改造 |
+| H1 不成立（`%post` 也能挂） | 保持现有实现（安装期拷贝）即可，无需改造，代价最小 |
+| H1 成立、H2 不成立 | Ventoy 分区两条路都不通 → 必须**重做 U 盘**加独立分区，或改用第二个 U 盘 |
+
+### 测试时注意
+
+- 用**目标机 + 真实 Ventoy U 盘**，不要在虚拟机上测（虚拟机的 USB 直通与真实固件行为不同）
+- U 盘上要**真的放一份 `payload/` 目录**，才能区分"分区能挂"与"分区存在但内容不对"
+- 记录 U 盘的分区布局（`fdisk -l /dev/sdX`）与 Ventoy 版本，结论依赖这两者
+
+---
+
+## 7. 参考
 
 - Red Hat，[How to run a one-time configuration script on first boot in RHEL](https://access.redhat.com/solutions/7135087)（Verified Solution，RHEL 7–10）
 - Google Cloud，[Best practices for automatically provisioning and configuring edge and bare metal systems](https://docs.cloud.google.com/architecture/connected-devices/best-practices-provisioning-configuring-bare-metal)（Golden/Silver image 概念）
