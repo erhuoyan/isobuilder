@@ -16,8 +16,10 @@
 ARG BUILD_BASE=hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb
 FROM ${BUILD_BASE} AS web
 WORKDIR /src
-# 先拷包清单装依赖（依赖未变时复用层缓存；build_context=. → COPY 相对仓库根）
-COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./frontend/
+# 先拷包清单 + .npmrc 装依赖（依赖未变时复用层缓存；build_context=. → COPY 相对仓库根）
+# .npmrc 必须与包清单同批到位：它指定 registry=https://registry.npmmirror.com/，
+# 晚一步（等 COPY frontend/ 那层）会让 pnpm install 走官方源 npmjs.org，慢到不可用。
+COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml frontend/.npmrc ./frontend/
 COPY frontend/packages ./frontend/packages
 RUN cd frontend && pnpm install --frozen-lockfile
 COPY frontend/ ./frontend/

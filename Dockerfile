@@ -16,7 +16,9 @@
 FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS web
 WORKDIR /app/frontend
 RUN corepack enable && corepack prepare pnpm@12.6.0 --activate
-COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./
+# .npmrc 与包清单同批到位：它指定 registry=https://registry.npmmirror.com/，
+# 晚一步会让 pnpm install 走官方源 npmjs.org（慢到不可用）。
+COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml frontend/.npmrc ./
 COPY frontend/packages ./packages
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
