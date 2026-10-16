@@ -1,24 +1,34 @@
 #!/bin/bash
-[ -f "/home/admin/stop_before.sh" ] && bash /home/admin/stop_before.sh
-# 此脚本必须在/home/admin下，为应用的停止脚本
+# jdos 平台停止入口（照平台调度器范式）。真实停止脚本在 /export/App/bin/stop.sh。
 
-SERVER_NAME="isobuilder"
+source /etc/profile
 
-# isobuilder 是前台服务，监听 SIGTERM 做优雅退出：
-#   CancelAll（取消运行中构建）→ server.Shutdown（最长 20s）→ manager.Wait（等构建 goroutine）
-# 与 redis 模板的 pkill 不同点：这里先 TERM 给足退出窗口，超时才 KILL 兜底。
-pgrep -x $SERVER_NAME >/dev/null && {
-  echo "sending SIGTERM to $SERVER_NAME ..."
-  pkill -x -TERM $SERVER_NAME
-  for _ in $(seq 1 25); do
-    pgrep -x $SERVER_NAME >/dev/null || break
-    sleep 1
-  done
-  if pgrep -x $SERVER_NAME >/dev/null; then
-    echo "$SERVER_NAME still alive after 25s, sending SIGKILL"
-    pkill -x -KILL $SERVER_NAME
+if [ -f "/home/admin/stop_before.sh" ]; then
+    cd /home/admin
+    chmod 777 stop_before.sh
+    su -m admin -c ./stop_before.sh
+fi
+
+if [ ! -f "/export/App/bin/stop.sh" ]; then
+    echo "There is no stop.sh file, skip stop"
+    exit 1
+fi
+
+cd /export/App/bin/
+chmod +x stop.sh
+su -m admin -c ./stop.sh
+
+MONITOR_SHELL=/export/Shell/pid_monitor/task.sh
+if [[ -f $MONITOR_SHELL ]]; then
+  if [ "$JDOS_PID_KEY" ]; then
+      setsid bash $MONITOR_SHELL $APP_ID 1 "$JDOS_PID_KEY" 2 &
+  else
+      setsid bash $MONITOR_SHELL $APP_ID 1 "server1" 2 &
   fi
-  echo "$SERVER_NAME stop success"
-} || echo "$SERVER_NAME is not running"
+fi
 
-[ -f "/home/admin/stop_after.sh" ] && bash /home/admin/stop_after.sh
+if [ -f "/home/admin/stop_after.sh" ]; then
+    cd /home/admin
+    chmod 777 stop_after.sh
+    su -m admin -c ./stop_after.sh
+fi

@@ -59,10 +59,14 @@ COPY --from=web /src/backend/web/dist ./web/
 COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
-# jdos 启停脚本（必须，放 /home/admin/，勿拷 /export——jdos 拉起时挂本地盘覆盖）
+# 启停脚本三层：
+#   /home/admin/{start,stop}.sh      平台入口（薄委托，随镜像走）
+#   /opt/isobuilder/bin/{start,stop}.sh  真实脚本副本（/export 被覆盖时兜底）
+#   /export/App/bin/                 真实脚本的运行时位置（start_container.sh 播种，可改）
 COPY start.sh stop.sh start_container.sh /home/admin/
-RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
-    chown admin:admin /home/admin/{start,stop,start_container}.sh
+COPY bin/start.sh bin/stop.sh /opt/isobuilder/bin/
+RUN chmod +x /home/admin/{start,stop,start_container}.sh /opt/isobuilder/bin/{start,stop}.sh && \
+    chown admin:admin /home/admin/{start,stop,start_container}.sh /opt/isobuilder/bin/{start,stop}.sh
 
 # sshd 首跑需生成 host key
 RUN ssh-keygen -A

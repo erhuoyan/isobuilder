@@ -1,21 +1,29 @@
 #!/bin/bash
-[ -f "/home/admin/start_before.sh" ] && bash /home/admin/start_before.sh
-# 此脚本必须在/home/admin下，为应用的启动脚本
+# jdos 平台启动入口（照平台调度器范式）。真实启动脚本在 /export/App/bin/start.sh
+# ——运行时可改，改完点「停止/启动」即生效，无需重打镜像。
 
-SERVER_NAME="isobuilder"
-RUNCMD="/opt/isobuilder/isobuilder"
-LOG_DIR="/export/log/isobuilder"
+source /etc/profile
 
-export ISOBUILDER_ADDR="${ISOBUILDER_ADDR:-:8080}"
-export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/data}"
-export ISOBUILDER_WEB_DIR="${ISOBUILDER_WEB_DIR:-/opt/isobuilder/web}"
-export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-/opt/isobuilder/kickstarts}"
+if [ -f "/home/admin/start_before.sh" ]; then
+    cd /home/admin
+    chmod 777 start_before.sh
+    su -m admin -c ./start_before.sh
+fi
 
-# isobuilder 是前台服务、不自我 daemonize（redis 模板靠 daemonize yes 自我后台化），
-# 故 nohup 后台拉起让本脚本立即返回——控制台 ssh 执行不能挂住。
-pgrep -x $SERVER_NAME >/dev/null && echo "$SERVER_NAME is running" || {
-  cd /opt/isobuilder && nohup $RUNCMD >> "$LOG_DIR/stdout.log" 2>&1 &
-  echo "$SERVER_NAME start success (pid $!)"
-}
+cd /export/App/bin/
+su -m admin -c ./start.sh
 
-[ -f "/home/admin/start_after.sh" ] && bash /home/admin/start_after.sh
+MONITOR_SHELL=/export/Shell/pid_monitor/task.sh
+if [[ -f $MONITOR_SHELL ]]; then
+  if [ "$JDOS_PID_KEY" ]; then
+      setsid bash $MONITOR_SHELL $APP_ID 1 "$JDOS_PID_KEY" 1 &
+  else
+      setsid bash $MONITOR_SHELL $APP_ID 1 "server1" 1 &
+  fi
+fi
+
+if [ -f "/home/admin/start_after.sh" ]; then
+    cd /home/admin
+    chmod 777 start_after.sh
+    su -m admin -c ./start_after.sh
+fi
