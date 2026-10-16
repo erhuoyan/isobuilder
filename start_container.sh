@@ -36,7 +36,7 @@ curl -sL  $docker_init_url | bash
 ######以下内容是启动应用内容，根据实际情况填写######
 
 # 数据目录（NFS 挂载点，见 JDOS.md「持久化存储」一节）与日志目录
-# （/export 是 jdos 本地盘；/export/App/bin 的启停脚本由平台侧维护，不在此播种）
+# （/export 是 jdos 本地盘）
 mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
          /export/log/isobuilder
 # 只有可写目录需要给 admin（服务以 admin 身份运行）：
@@ -45,7 +45,10 @@ mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
 # /opt/isobuilder 是只读执行路径（二进制/前端/模板），落地已 755，无需 chown。
 chown -R admin:admin /data /export/log/isobuilder
 
-[ -f "/home/admin/start_before.sh" ] && su -m admin -c "bash /home/admin/start_before.sh"
+# start_before/after 钩子由 /home/admin/start.sh 内部调用，此处不再重复执行。
+# /export/App/bin/ 的真实启停脚本需在部署前手动备好（复制路径见 JDOS.md
+# 「首次部署」）；缺失时容器启动失败（CrashLoopBackOff）即暴露该前提——
+# 失败必须可见，不静默兜底。
 
 # 平台约定：必须切 admin 用户启动应用
 su -m admin -c "bash /home/admin/start.sh"

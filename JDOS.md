@@ -10,9 +10,13 @@
 └── jdos_build_base.yaml   任务①：编译基础镜像（base_image）
 containerlize/
 ├── base/Dockerfile         编译基础镜像（openEuler 22.03 + Go 1.26.9 + Node 22.12.0 + pnpm 12.6.0）
-└── app/Dockerfile         三阶段应用镜像（web → api → runtime）
-start.sh / stop.sh / start_container.sh   jdos 宿管启停脚本（根目录，app Dockerfile COPY 进 /home/admin/）
+├── app/Dockerfile         三阶段应用镜像（web → api → runtime）
+└── standalone/Dockerfile  通用运行时镜像（docker compose / 手工 buildx / K8s，不进 jdos）
+start.sh / stop.sh / start_container.sh   jdos 宿管启停入口（随镜像烤入 /home/admin/）
+bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录；不进镜像，部署时手动复制到 /export/App/bin/）
 ```
+
+> ⚠️ jdos 约定的配置文件名是 **`.jdos/jdos_build.yaml`**（单个）。一个 yaml 只能定义一个 `artifact_type`，官方示例靠拆分支绕开此限制。本仓库用 `jdos_build_base.yaml` 承载基础镜像任务，**平台不识别非约定名时**在临时分支把该文件改名为 `jdos_build.yaml` 再建任务。
 
 > ⚠️ jdos 约定的配置文件名是 **`.jdos/jdos_build.yaml`**（单个）。一个 yaml 只能定义一个 `artifact_type`，官方示例靠拆分支绕开此限制。本仓库用 `jdos_build_base.yaml` 承载基础镜像任务——**平台若不识别非约定名**，回退用已验证可用的独立分支：`jdos-base-image`（任务①）+ `jdos-build`（任务②，其 `.jdos/jdos_build.yaml` 指向容器镜像教程路径）。
 
@@ -38,13 +42,15 @@ openEuler 22.03 + `xorriso syslinux syslinux-nonlinux isomd5sum openssh-server c
 
 ## jdos 宿管约定（必须）
 
-根目录三脚本拷进 `/home/admin/`（**勿拷 /export**，jdos 拉起时挂本地盘覆盖）：
+根目录三脚本随镜像烤入 `/home/admin/`（**勿拷 /export**，jdos 拉起时挂本地盘覆盖）：
 
 | 文件 | 职责 |
 |---|---|
-| `start_container.sh` | 前 28 行平台固定初始化（从 `mirrors.jdfin.local` 注入行云部署公钥，否则控制台目录/启停/网络全报 Permission denied）→ 数据目录赋权 → 切 admin 启动应用 |
-| `start.sh` | 控制台「启动」钩子；pgrep 幂等保活，nohup 拉起 isobuilder |
-| `stop.sh` | 控制台「停止」钩子；SIGTERM 触发后端优雅退出（CancelAll 构建 → Shutdown 20s → manager.Wait），25s 超时 SIGKILL |
+| `start_container.sh` | 前 28 行平台固定初始化（从 `mirrors.jdfin.local` 注入行云部署公钥，否则控制台目录/启停/网络全报 Permission denied）→ 数据目录赋权 → 切 admin 调用 `/home/admin/start.sh` |
+| `start.sh` | 平台调度器入口：source profile + `start_before/after` 钩子 + `su -m admin -c /export/App/bin/start.sh`。**该目录无脚本即启动失败（CrashLoopBackOff）——失败必须可见** |
+| `stop.sh` | 平台调度器入口：`stop_before/after` 钩子 + `/export/App/bin/stop.sh`。**永远成功**：脚本缺失视为服务未运行，进程不在 `pidof` 亦优雅退出 0 |
+
+**首次部署必须动作**：把仓库 `bin/{start,stop}.sh` 复制到实例的 `/export/App/bin/`（平台挂载盘）并 `chmod +x`。之后修改 `/export/App/bin/*.sh`，控制台点停止/启动即生效，无需重打镜像。本地正本更新后同步覆盖即可。
 
 ENTRYPOINT 固定不可改：
 
@@ -88,6 +94,6 @@ docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos \
 
 ## 验证与已知边界
 
-- 任务①已验证通过：产物 `yhpoc-ui-base:v20261016.215657-1a8f8ec5-Q9jAzg`（含 Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0，npm 全局装 pnpm 绕开 corepack 签名问题）。
-- 任务②首次构建曾踩：jdos「普通构建」模式改写 Dockerfile 会使 `ARG BUILD_BASE` 失效（注入 git 阶段破坏 ARG 全局作用域 + build_args 不透传）。改用**原生构建**后该问题理论上消除（原生 build_args 真透传且不改 Dockerfile），待实测确认。
-- `package` 制品类型：isobuilder 用不到（镜像交付，不出裸包），未配置。
+- 任务①已验证通过：产物 `hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb`（含 Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0，npm 全局装 pnpm 绕开 corepack 签名问题）。
+- 任务②已实测通过（原生构建，`v20261016.235714-1a6458f4-zti9fx`）：build_args 真透传，ARG BUILD_BASE 三阶段正常解析。首次踩的 `jdos「普通构建」模式改写 Dockerfile 使 ARG 失效` 不存在于原生构建。
+- 基础镜像基底只能用平台白名单内网镜像：实测 `docker.io/rockylinux:9-minimal` 在渲染阶段即被拒（`invalid registry: docker.io`）。

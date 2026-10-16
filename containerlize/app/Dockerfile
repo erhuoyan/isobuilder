@@ -60,16 +60,12 @@ COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
 # 启停脚本：
-#   根 start.sh/stop.sh              平台调度器入口（source profile + 钩子 + su admin），
-#                                    调用 /export/App/bin/{start,stop}.sh
-#   bin/{start,stop}.sh              版本化正本（git 记录）；镜像内留一份于
-#                                    /opt/isobuilder/bin/ 便于从实例取出对照。
-#                                    运行位置 /export/App/bin/ 是平台挂载盘，
-#                                    由使用者手动从 bin/ 复制过去，不随镜像走。
+#   根 start.sh/stop.sh/start_container.sh   平台入口，随镜像烤入 /home/admin/
+#   bin/{start,stop}.sh                       版本化正本（git 记录），不进镜像；
+#                                             部署时手动从仓库复制到 /export/App/bin/
 COPY start.sh stop.sh start_container.sh /home/admin/
-COPY bin/start.sh bin/stop.sh /opt/isobuilder/bin/
-RUN chmod +x /home/admin/{start,stop,start_container}.sh /opt/isobuilder/bin/{start,stop}.sh && \
-    chown admin:admin /home/admin/{start,stop,start_container}.sh /opt/isobuilder/bin/{start,stop}.sh
+RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
+    chown admin:admin /home/admin/{start,stop,start_container}.sh
 
 # sshd 首跑需生成 host key
 RUN ssh-keygen -A
