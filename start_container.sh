@@ -35,23 +35,15 @@ curl -sL  $docker_init_url | bash
 ######以上内容都是初始化系统依赖脚本，原样复制即可#######
 ######以下内容是启动应用内容，根据实际情况填写######
 
-# 数据目录（NFS 挂载点，见 JDOS.md「持久化存储」一节）
-# 与 日志目录（/export 是 jdos 本地盘）
+# 数据目录（NFS 挂载点，见 JDOS.md「持久化存储」一节）与日志目录
+# （/export 是 jdos 本地盘；/export/App/bin 的启停脚本由平台侧维护，不在此播种）
 mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
-         /export/log/isobuilder /export/App/bin
-chown -R admin:admin /data /opt/isobuilder /export/log/isobuilder /export/App
-
-# 播种真实启停脚本到 /export/App/bin（运行时可改：改完点停止/启动即生效，
-# 无需重打镜像）。/export 在容器拉起时被挂载盘覆盖，故不能只靠镜像烤；
-# 已存在的文件不覆盖——用户手工改过的版本优先。
-for f in start.sh stop.sh; do
-  if [ ! -f "/export/App/bin/$f" ]; then
-    cp "/opt/isobuilder/bin/$f" "/export/App/bin/$f"
-    chmod 0755 "/export/App/bin/$f"
-    chown admin:admin "/export/App/bin/$f"
-    echo "[start_container] seeded /export/App/bin/$f from image"
-  fi
-done
+         /export/log/isobuilder
+# 只有可写目录需要给 admin（服务以 admin 身份运行）：
+#   /data                   构建工作区 + SQLite（NFS 挂载点，常为 root 属主）
+#   /export/log/isobuilder  服务 stdout 日志
+# /opt/isobuilder 是只读执行路径（二进制/前端/模板），落地已 755，无需 chown。
+chown -R admin:admin /data /export/log/isobuilder
 
 [ -f "/home/admin/start_before.sh" ] && su -m admin -c "bash /home/admin/start_before.sh"
 

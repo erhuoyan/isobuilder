@@ -59,10 +59,13 @@ COPY --from=web /src/backend/web/dist ./web/
 COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
-# 启停脚本三层：
-#   /home/admin/{start,stop}.sh      平台入口（薄委托，随镜像走）
-#   /opt/isobuilder/bin/{start,stop}.sh  真实脚本副本（/export 被覆盖时兜底）
-#   /export/App/bin/                 真实脚本的运行时位置（start_container.sh 播种，可改）
+# 启停脚本：
+#   根 start.sh/stop.sh              平台调度器入口（source profile + 钩子 + su admin），
+#                                    调用 /export/App/bin/{start,stop}.sh
+#   bin/{start,stop}.sh              版本化正本（git 记录）；镜像内留一份于
+#                                    /opt/isobuilder/bin/ 便于从实例取出对照。
+#                                    运行位置 /export/App/bin/ 是平台挂载盘，
+#                                    由使用者手动从 bin/ 复制过去，不随镜像走。
 COPY start.sh stop.sh start_container.sh /home/admin/
 COPY bin/start.sh bin/stop.sh /opt/isobuilder/bin/
 RUN chmod +x /home/admin/{start,stop,start_container}.sh /opt/isobuilder/bin/{start,stop}.sh && \
