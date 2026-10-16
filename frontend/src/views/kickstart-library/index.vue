@@ -353,17 +353,12 @@ onMounted(() => {
 
     <NDrawer v-model:show="previewShow" placement="right" width="min(100vw, 720px)">
       <NDrawerContent :title="`模板预览 · ${previewName}`" :native-scrollbar="false" closable>
+        <template #footer>
+          <NButton type="primary" :disabled="!previewContent" @click="copyPreview">复制全文</NButton>
+        </template>
         <NSpin :show="previewLoading">
-          <pre class="m-0 min-h-200px whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
+          <pre class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
         </NSpin>
-        <div class="mt-8px flex justify-end">
-          <NButton size="small" :disabled="!previewContent" @click="copyPreview">
-            <template #icon>
-              <SvgIcon icon="mdi:content-copy" />
-            </template>
-            复制全文
-          </NButton>
-        </div>
       </NDrawerContent>
     </NDrawer>
 

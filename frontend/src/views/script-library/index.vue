@@ -245,7 +245,7 @@ onMounted(() => {
           <NButton type="primary" @click="copyPreview">复制内容</NButton>
         </template>
         <pre
-          class="m-0 min-h-200px whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900"
+          class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900"
         >{{ previewContent || '脚本内容为空' }}</pre>
       </NDrawerContent>
     </NDrawer>
