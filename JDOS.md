@@ -27,7 +27,7 @@ start.sh / stop.sh / start_container.sh   jdos 宿管启停脚本（根目录，
 
 先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `.jdos/jdos_build.yaml` 的 `BUILD_BASE` 改为该地址后跑②。
 
-当前编译镜像：`hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.232248-fb7b51ba-h27bdb`
+当前编译镜像：`hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb`（制品名 = 控制台应用名，不带 `-base` 后缀）
 ## 资源区与镜像
 
 统一使用 `hub.is.jd.com` 仓库地址（实测办公网/部署机/本机均可解析；jdos 构建机实际拉取推送也走此入口，digest 与 harbor-pro 的同源镜像一致）。内网仓库自签名证书：本地构建需在 docker daemon 配置 `"insecure-registries": ["hub.is.jd.com", ...]`。
@@ -75,7 +75,7 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 ```bash
 # ① 基础镜像（需内网对象存储可达）
 docker build -t isobuilder-build-base:local -f containerlize/base/Dockerfile.base .
-# 拉取 jdos 产物做编译镜像：docker pull hub.is.jd.com/technical-service/yhpoc-ui-base:<tag>
+# 拉取 jdos 产物做编译镜像：docker pull hub.is.jd.com/technical-service/yhpoc-ui:<tag>
 
 # ② 应用镜像
 docker build --build-arg BUILD_BASE=isobuilder-build-base:local \

@@ -13,7 +13,7 @@
 #        /opt/isobuilder/isobuilder
 
 # ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
-ARG BUILD_BASE=hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.232248-fb7b51ba-h27bdb
+ARG BUILD_BASE=hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb
 FROM ${BUILD_BASE} AS web
 WORKDIR /src
 # 先拷包清单装依赖（依赖未变时复用层缓存；build_context=. → COPY 相对仓库根）

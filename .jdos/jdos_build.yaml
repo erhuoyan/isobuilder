@@ -12,4 +12,4 @@ dockerfile_name: Dockerfile
 build_context: .
 build_target: runtime
 build_args:
-  BUILD_BASE: hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.232248-fb7b51ba-h27bdb
+  BUILD_BASE: hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb
