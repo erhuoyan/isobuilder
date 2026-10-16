@@ -346,6 +346,12 @@ PAYLOAD_DEST="/mnt/sysimage/opt/payload"
 PAYLOAD_MP=/tmp/isobuilder-usb
 PAYLOAD_LOG=/mnt/sysimage/var/log/pxe-install.log
 mkdir -p "$PAYLOAD_MP" 2>/dev/null
+# 预热文件系统模块：Rocky 9（5.14+ 原生）与 openEuler 22.03（exfat backport）
+# 都编了 exfat.ko，但安装器 initrd 未必已加载；挂载前 modprobe 一次即可，
+# 无需安装任何包（%packages 装的包进的是目标系统，对当前安装环境无效）。
+# vfat 兜底 FAT32；万一 exfat 模块不在 initrd 里，FAT32 分区仍可挂载。
+modprobe exfat 2>/dev/null
+modprobe vfat 2>/dev/null
 
 # 只读挂载，绝不在 U 盘上写任何东西；任何一步失败都只影响这一步。
 payload_try() {

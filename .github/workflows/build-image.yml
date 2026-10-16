@@ -1,0 +1,73 @@
+# push main 自动构建镜像并推送到 JD 仓库。
+#
+# 设计：复用 deploy/build-image.sh（宿主机 Go 原生编译 + Node 构建 →
+# 只用 Dockerfile.prebuilt 打运行时镜像）。GitHub Actions 的 amd64 runner
+# 与目标架构一致（GOOS=linux 原生即可），唯一进容器的步骤是 microdnf install。
+#
+# 所需 GitHub Secrets（Settings → Secrets and variables → Actions）：
+#   JD_REGISTRY_USERNAME   hub-pub.jdcloud.com 镜像推送账号
+#   JD_REGISTRY_PASSWORD   对应密码/token
+# 凭据只存 GitHub Secrets（加密封存），不进代码、不进镜像、不进日志。
+# 版本号取 git tag（`git describe --tags --abbrev=0`），没有 tag 时 build-image.sh
+# 自动回落 0.0.0。发 release 就打 tag（git tag v0.2.0 && git push --tags）。
+#
+# 产出镜像 tag 形如 <版本>-<commit>-<时间>，部署：
+#   kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
+
+name: build-image
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: build-image-${{ github.ref }}
+  cancel-in-progress: true   # 连续 push 只保留最新一次构建
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # pnpm install 会触发 prepare → simple-git-hooks，CI 里无意义且可能失败。
+      - name: Install frontend deps
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: frontend
+
+      - name: Backend tests (gate)
+        run: go test ./...
+        working-directory: backend
+
+      # 凭据来自 GitHub Secrets，stdin 传入（不进进程参数、不进日志）。
+      - name: Login to JD registry
+        env:
+          JD_REGISTRY_USERNAME: ${{ secrets.JD_REGISTRY_USERNAME }}
+          JD_REGISTRY_PASSWORD: ${{ secrets.JD_REGISTRY_PASSWORD }}
+        run: |
+          echo "$JD_REGISTRY_PASSWORD" | docker login hub-pub.jdcloud.com \
+            -u "$JD_REGISTRY_USERNAME" --password-stdin
+
+      - name: Build and push image
+        env:
+          REGISTRY: hub-pub.jdcloud.com/iaas-jf
+        run: ./deploy/build-image.sh --push

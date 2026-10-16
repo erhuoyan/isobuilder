@@ -25,6 +25,13 @@ func TestRenderPayloadSnippet(t *testing.T) {
 			t.Fatalf("label 模式缺少 %q", want)
 		}
 	}
+	// 挂载前必须预热文件系统模块：安装器 initrd 未必已加载 exfat/vfat，
+	// 没有 modprobe 的话 exFAT/FAT32 分区会静默挂载失败（payload 看似没拷上）。
+	for _, want := range []string{"modprobe exfat", "modprobe vfat"} {
+		if !strings.Contains(label, want) {
+			t.Fatalf("label 模式缺少 %q（挂载前需预热内核模块）", want)
+		}
+	}
 	if strings.Contains(label, "PAYLOAD_TARGET") {
 		t.Fatal("label 模式不应包含兜底扫描")
 	}
