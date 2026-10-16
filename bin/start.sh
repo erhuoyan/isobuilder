@@ -1,8 +1,9 @@
-#!/bin/sh
+#!/bin/bash
 # isobuilder 真实启动脚本（位于 /export/App/bin/start.sh，运行时可改：
 # 改完在控制台点「停止/启动」即生效，无需重打镜像）。
 #
 # 平台入口 /home/admin/start.sh 委托到本脚本。
+set -uo pipefail
 
 # 应用主目录与可执行文件（二进制烤在镜像里，不能放 /export——拉起时被挂载覆盖）
 APP_HOME=/opt/isobuilder
@@ -16,14 +17,13 @@ export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
 mkdir -p "$LOG_DIR"
 
-PIDPROC=`pidof $BIN`
-if [ -z "$PIDPROC" ]; then
+PIDPROC=$(pidof "$BIN" || true)
+if [[ -z "$PIDPROC" ]]; then
     # isobuilder 是前台服务，不自我 daemonize，故后台拉起（&）
     echo "应用启动命令："
     echo "$APP_HOME/$BIN >> $LOG_DIR/$BIN.log 2>&1 &"
-    cd $APP_HOME && $APP_HOME/$BIN >> $LOG_DIR/$BIN.log 2>&1 &
-    PIDPROC=`pidof $BIN`
-    echo "started pid: $PIDPROC"
+    cd "$APP_HOME" && "$APP_HOME/$BIN" >> "$LOG_DIR/$BIN.log" 2>&1 &
+    echo "started pid: $(pidof "$BIN")"
 else
     echo "(pid:$PIDPROC) is running"
 fi
