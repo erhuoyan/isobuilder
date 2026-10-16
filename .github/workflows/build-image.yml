@@ -1,5 +1,9 @@
-# 打 tag 才构建镜像并推送到 JD 仓库：git tag v1.5 && git push origin v1.5
-# 日常 push main 不构建（镜像仓库只留发布镜像，不堆 WIP）。
+# 构建镜像并推送到 JD 仓库。两种触发：
+#   1. 推 v* tag：git tag v0.3 && git push origin v0.3 —— 正式发版
+#   2. Actions 页面 "Run workflow" 选 main —— 同 tag 后攒了提交，想出个带距离号
+#      的路过镜像（如 v0.2-3-gXXXX），无需新 tag
+#
+# 日常 push main 不自动构建（镜像仓库只留发布镜像，不堆 WIP）。
 #
 # 复用 deploy/build-image.sh（宿主机 Go 原生编译 + Node 构建 →
 # 只用 Dockerfile.prebuilt 打运行时镜像）。GitHub Actions 的 amd64 runner
@@ -13,13 +17,10 @@
 # 镜像 tag 形如 v1.5-1680-ged42c0f-202610122038：
 # git describe 完整输出（tag + tag 后提交数 + 短 SHA）+ 紧贴时间戳。
 # 同一个 tag 后继续提交再打一次同 tag 构建也能区分。部署：
-#   kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
-
-name: build-image
-
 on:
   push:
-    tags: ['v*']   # 只有 v 开头的 tag 才触发
+    tags: ['v*']          # 推 v* tag 自动触发（正式发版）
+  workflow_dispatch:      # Actions 页面 "Run workflow" 手动触发（同 tag 多次构建）
 
 concurrency:
   group: build-image-${{ github.ref }}

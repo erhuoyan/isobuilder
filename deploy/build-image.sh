@@ -43,7 +43,7 @@ done
 #          （tag + tag 后提交数 + 短 SHA + 紧贴的时间戳，一个 tag 可对应多次构建）
 #   无 tag: 分支名 + 短 SHA        → main-ged42c0f-202610122038
 #   裸仓库: 退回 short SHA          → ged42c0f-202610122038
-DESC="$(git -C "$ROOT" describe --tags 2>/dev/null || true)"
+DESC="$(git -C "$ROOT" describe --tags --long 2>/dev/null || true)"
 if [ -n "$VERSION" ]; then
     : # 显式参数优先
 elif [ -n "$DESC" ]; then
