@@ -200,7 +200,7 @@ onMounted(() => {
     <NCard :bordered="false" class="card-wrapper" size="medium">
       <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
         <div>
-          <h2 class="text-18px font-500">装机后脚本</h2>
+          <h2 class="text-18px font-500">自定义脚本</h2>
           <p class="mt-4px text-13px text-gray-500">
             可复用的安装后脚本库。项目里选中后在系统安装完成后执行；脚本库在前、项目内的追加脚本在后。
           </p>
@@ -233,7 +233,7 @@ onMounted(() => {
       >
         <template #empty>
           <div class="py-40px">
-            <NEmpty description="脚本库还没有内容，点击「新建脚本」添加一个可复用的安装后脚本" />
+            <NEmpty description="脚本库还没有内容，点击「新建脚本」添加一个可复用的自定义脚本" />
           </div>
         </template>
       </NDataTable>

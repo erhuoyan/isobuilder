@@ -175,7 +175,7 @@ onMounted(async () => {
               </NGrid>
             </NForm>
           </NCollapseItem>
-          <NCollapseItem title="装机后脚本" name="post-script">
+          <NCollapseItem title="自定义脚本" name="post-script">
             <NForm size="small" label-placement="top" :show-feedback="false">
               <NFormItem label="脚本库（可复用）">
                 <NSelect

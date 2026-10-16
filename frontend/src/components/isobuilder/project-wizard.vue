@@ -23,7 +23,7 @@ const steps = [
   { key: 'iso', title: '基础镜像', description: '选用一个已就绪的 ISO' },
   { key: 'kickstart', title: '应答模板', description: '选用 kickstart 模板' },
   { key: 'hosts', title: '主机清单', description: '粘贴并校验主机信息' },
-  { key: 'post-script', title: '装机后脚本', description: '安装完成后执行的自定义脚本' },
+  { key: 'post-script', title: '自定义脚本', description: '安装完成后执行的自定义脚本' },
   { key: 'advanced', title: '高级项', description: 'ISO 卷标与产物文件名' }
 ] as const;
 
@@ -573,7 +573,7 @@ onMounted(async () => {
         <HostsEditor v-model:value="hostsRaw" v-model:format="hostsFormat" @validate="onValidateHosts" />
       </div>
 
-      <!-- 5. 装机后脚本 -->
+      <!-- 5. 自定义脚本 -->
       <div v-else-if="currentStep === 4" class="flex flex-col gap-12px">
         <NForm label-placement="top" :show-feedback="false">
           <NFormItem label="脚本库（可选，可复用）">

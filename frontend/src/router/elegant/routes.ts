@@ -152,6 +152,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     meta: {
       title: 'script-library',
       i18nKey: 'route.script-library',
+      icon: 'mdi:script-text-outline',
+      order: 4,
       hideInMenu: false
     }
   },
@@ -163,7 +165,7 @@ export const generatedRoutes: GeneratedRoute[] = [
       title: 'settings',
       i18nKey: 'route.settings',
       icon: 'mdi:cog-outline',
-      order: 4,
+      order: 5,
       hideInMenu: false
     }
   }

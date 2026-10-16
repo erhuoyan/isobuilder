@@ -1,6 +1,6 @@
 import { request } from '../request';
 
-/** 装机后脚本库 */
+/** 自定义脚本库 */
 
 /** get all scripts */
 export function fetchGetScripts() {

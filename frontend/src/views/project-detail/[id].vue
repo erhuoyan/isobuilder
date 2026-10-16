@@ -255,7 +255,7 @@ onMounted(async () => {
           <NDescriptionsItem label="输出文件名">
             <span class="font-mono">{{ project.output_name || '（构建时自动生成）' }}</span>
           </NDescriptionsItem>
-          <NDescriptionsItem label="装机后脚本">
+          <NDescriptionsItem label="自定义脚本">
             <template v-if="project.script || project.post_script">
               <NTag v-if="project.script" size="small" type="info" :bordered="false">
                 {{ project.script.name }}
