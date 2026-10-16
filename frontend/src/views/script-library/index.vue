@@ -245,11 +245,8 @@ onMounted(() => {
           <NButton type="primary" @click="copyPreview">复制内容</NButton>
         </template>
         <pre
-          v-if="previewContent"
-          class="m-0 rounded-6px border border-gray-300 bg-white p-12px font-mono text-12px leading-1.6"
-          style="white-space: pre-wrap; word-break: break-all"
-        >{{ previewContent }}</pre>
-        <NEmpty v-else description="脚本内容为空" />
+          class="m-0 min-h-200px whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900"
+        >{{ previewContent || '脚本内容为空' }}</pre>
       </NDrawerContent>
     </NDrawer>
 
