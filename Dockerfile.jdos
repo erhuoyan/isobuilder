@@ -1,23 +1,35 @@
-# isobuilder — jdos 原生构建应用镜像（云翼资源区 harbor-pro）
+# isobuilder — jdos 原生构建应用镜像（云翼资源区）
 #
-# 前置：jdos-base-image 分支的构建任务已产出「编译基础镜像」，
-#       把下方 ARG BUILD_BASE 改为该制品的实际仓库地址（或在控制台任务 build_args 传）。
+# jdos 对本文件的改写行为（构建日志实测）：
+#   1. 自动在最前注入 git 阶段（把代码拉到 /workspace/source），并把所有相对路径
+#      COPY 改写为 COPY --from=git /workspace/source/...（顺序保留，层缓存策略有效）；
+#   2. 把**最后一个 FROM 替换为控制台「基础镜像」**，阶段名重命名为 builder，
+#      并强制 --target builder；
+#   3. 在替换后的 FROM 之后注入平台初始化（时区、安全基线脚本、clean_export.sh），
+#      ENTRYPOINT 被包一层先执行 clean_export.sh。
 #
-# 本地调试（先在 jdos-base-image 分支构建基础镜像）：
-#   git checkout jdos-base-image && docker build -t isobuilder-build-base:local -f Dockerfile .
-#   git checkout jdos-build
-#   docker build --build-arg BUILD_BASE=isobuilder-build-base:latest \
-#        -f Dockerfile.jdos -t isobuilder:jdos .
+# 「不需要写 FROM」的官方规则只适用于单阶段 Dockerfile；多阶段时 web/api 编译阶段
+# 必须显式 FROM。由此的设计取舍：
+#   - 编译阶段（web/api）**硬编码编译基础镜像 tag**：jdos 不替换非末位 FROM，且
+#     自定义 ARG/build-arg 传不进 FROM（控制台未透传，实测）；
+#   - 运行时阶段写 openEuler 供本地构建；jdos 构建时该 FROM 被控制台「基础镜像」
+#     覆盖——**任务②控制台的基础镜像必须选 openEuler 运行时底座**，不能选编译镜像
+#     （编译镜像带 Go/Node 数百 MB，只会出现在 web/api 两阶段中）。
 #
-# 运行（与 Dockerfile.prebuilt 一致：/data 挂卷、:8080、解包用 xorriso 无特权）：
-#   docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos
+# 控制台配置：制品类型 app_image；Dockerfile Dockerfile.jdos；target builder；
+# 基础镜像 jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest。
+#
+# 编译基础镜像（任务①）重新构建后 tag 变化，需同步更新下面两处 web/api 的 FROM。
+#
+# 本地调试（需能拉取 hub.is.jd.com 编译镜像）：
+#   docker build -f Dockerfile.jdos -t isobuilder:jdos .
+#   docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos \
+#        /opt/isobuilder/isobuilder
 
 # ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
-ARG BUILD_BASE=harbor-pro.jd.local/REPLACE_ME/isobuilder-build-base:latest
-FROM ${BUILD_BASE} AS web
+FROM hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.215657-1a8f8ec5-Q9jAzg AS web
 WORKDIR /src
-# pnpm 已随编译基础镜像（BUILD_BASE）npm 全局安装，无需再装
-# 先拷包清单装依赖，命中 layer 缓存：改业务代码不重装 node_modules
+# 先拷包清单装依赖（jdos 改写为 --from=git 后两层 COPY 顺序保留，依赖未变时可复用层缓存）
 COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./frontend/
 COPY frontend/packages ./frontend/packages
 RUN cd frontend && pnpm install --frozen-lockfile
@@ -26,7 +38,7 @@ COPY frontend/ ./frontend/
 RUN cd frontend && pnpm build
 
 # ── Stage 2: 后端（编译基础镜像里的 Go，CGO 关闭纯静态编译）────────────────────
-FROM ${BUILD_BASE} AS api
+FROM hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.215657-1a8f8ec5-Q9jAzg AS api
 ARG GOPROXY=http://artifactory.jd.com/api/go/go_virtual
 ENV GOPROXY=${GOPROXY} GOSUMDB=off GOTOOLCHAIN=local
 WORKDIR /src/backend
@@ -35,17 +47,14 @@ RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/isobuilder
 
-# ── Stage 3: 运行时（openEuler 22.03 + ISO 工具链 + jdos 管控组件）────────────
-# 四个工具包已在部署机容器内验证，与 Go 代码的路径发现完全匹配：
-#   xorriso / isohybrid / implantisomd5 → /usr/bin（exec.LookPath 命中）
-#   isohdpfx.bin → /usr/share/syslinux/isohdpfx.bin（代码路径表首位命中）
-# jdos 宿管组件（必须）：openssh-server 提供容器内 sshd，crontabs 让 crond 有配置可跑，
-#   tini 收尸僵尸进程，start/stop/start_container.sh 支撑控制台启停。
+# ── Stage 3: 运行时（最后一个 FROM 会被 jdos 替换为控制台「基础镜像」）──────────
+# 四个 ISO 工具包与 Go 代码路径发现匹配（部署机实测）：
+#   xorriso / isohybrid / implantisomd5 → /usr/bin；isohdpfx.bin → /usr/share/syslinux/
 FROM harbor-pro.jd.local/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS runtime
 
 RUN dnf install -y --setopt=install_weak_deps=False \
         xorriso syslinux syslinux-nonlinux isomd5sum ca-certificates \
-        openssh-server crontabs && \
+        openssh-server crontabs iputils curl wget && \
     dnf clean all && rm -rf /var/cache/dnf
 
 # tini 防僵尸进程（jdos 约定放 /home/admin/tini）
@@ -58,7 +67,7 @@ COPY --from=web /src/backend/web/dist ./web/
 COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
-# jdos 启停脚本（chown 的一次性赋权，与示例约定一致）
+# jdos 启停脚本（必须，放 /home/admin/，勿拷 /export——jdos 拉起时挂本地盘覆盖它）
 COPY start.sh stop.sh start_container.sh /home/admin/
 RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
     chown admin:admin /home/admin/{start,stop,start_container}.sh
@@ -74,7 +83,5 @@ ENV ISOBUILDER_ADDR=:8080 \
 VOLUME ["/data"]
 EXPOSE 8080
 
-# jdos 约定的固定 ENTRYPOINT（不可改）：
-#   sshd/crond 供宿管 Agent 用；start_container.sh 以 setsid+tini 拉起 isobuilder；
-#   sleep 9999999d 保活容器（服务崩溃时容器不退出，配合控制台重启策略）。
+# jdos 约定的固定 ENTRYPOINT（平台会在此前包一层 clean_export.sh，勿改本行结构）
 ENTRYPOINT /home/admin/tini -- bash -c "/usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"
