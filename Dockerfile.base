@@ -1,7 +1,7 @@
 # isobuilder 编译基础镜像：openEuler 22.03 LTS + Go 1.26.9 + Node 22.12.0 + pnpm
 #
 # jdos 用法（制品类型 = 基础镜像）：
-#   分支 jdos-base-image 的 .jdos/jdos_build.yaml 指向本文件；
+#   控制台建原生构建任务（base_image）指向本文件，target=builder；
 #   控制台基础镜像选 jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest
 #   （jdos 会用控制台选定的镜像替换本文件的 FROM，两者一致正好）；
 #   构建产物在「制品管理 - 基础镜像」查看，供应用镜像构建引用。

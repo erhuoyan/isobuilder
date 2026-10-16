@@ -1,6 +1,15 @@
 # jdos 原生构建说明（云翼资源区）
 
-isobuilder 在京东 jdos 平台分两步构建，**两个独立分支、各一个 `.jdos/jdos_build.yaml`**（jdos 每分支只认一个配置）：先在 `jdos-base-image` 分支构建**编译基础镜像**（Go + Node + pnpm），再在 `feat/jdos-build` 分支构建**应用镜像**（三阶段：前端 → 后端 → 运行时），部署后挂 **NFS 共享存储** 做持久化。
+**全部在单个分支 `feat/jdos-build` 上完成**。jdos 原生构建的配置（Dockerfile 路径 / 制品类型 / target / build args）全部在**控制台建任务时填写**，不在代码库放 `.jdos/jdos_build.yaml`——同一分支可以建多个任务指向各自的 Dockerfile，无需为不同制品类型开多个分支。
+
+两个构建任务：
+
+| 任务 | 制品类型 | Dockerfile | build_target | 备注 |
+|---|---|---|---|---|
+| ① 编译基础镜像 | base_image | `Dockerfile.base` | `builder` | 控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest` |
+| ② 应用镜像 | app_image | `Dockerfile.jdos` | `runtime` | build_args 填 `BUILD_BASE=<任务①制品仓库地址>` |
+
+先跑①，产物在「制品管理 → 基础镜像」，把仓库地址填进②的 build_args 再跑②。部署后挂 **NFS 共享存储** 做持久化。
 
 ## 资源区与镜像前缀
 
@@ -8,22 +17,18 @@ isobuilder 在京东 jdos 平台分两步构建，**两个独立分支、各一�
 
 ---
 
-## 第一步：编译基础镜像（制品类型 base_image）
+## 构建内容
 
-**分支 `jdos-base-image`**：`.jdos/jdos_build.yaml` 指向根目录 `Dockerfile.base`，target=`builder`；控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest`。
+**任务①（base_image）** 装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。
 
-装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。
 
-构建产物在「制品管理 → 基础镜像」，记下仓库地址，下一步用。
-
-## 第二步：应用镜像（制品类型 app_image）
+## 应用镜像（制品类型 app_image）
 
 | 项 | 值 |
-|---|---|---|
+|---|---|
 | Dockerfile | `Dockerfile.jdos`（根目录） |
-| 配置 | `.jdos/jdos_build.yaml` |
 | build_target | `runtime` |
-| build_args.BUILD_BASE | 第一步产物的仓库地址（**构建前必改**） |
+| build_args.BUILD_BASE | 任务①产物的仓库地址 |
 
 运行时镜像：openEuler 22.03 + `xorriso syslinux syslinux-nonlinux isomd5sum openssh-server crontabs iputils curl wget`。四个 ISO 工具包与 Go 代码 `internal/builder/pipeline.go` 的 `exec.LookPath` / `isohdpfx.bin` 路径表完全匹配（已在部署机容器内实测）。
 
