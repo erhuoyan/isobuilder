@@ -276,7 +276,7 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 	}
 
 	// post_script: 省略 = 不变；传值（含空串）= 覆盖。base64 编码注入 KS，这里只限大小。
-	postScript := pick(req.PostScript, p.PostScript)
+	postScript := normalizeScriptNewlines(pick(req.PostScript, p.PostScript))
 	if len(postScript) > maxPostScriptBytes {
 		return p, newAPIErr(http.StatusBadRequest, "invalid_post_script",
 			fmt.Sprintf("装机后脚本超过 %d 字节", maxPostScriptBytes))

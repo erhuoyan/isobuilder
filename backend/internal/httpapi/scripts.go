@@ -39,6 +39,9 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid_name", "脚本名称不能为空")
 		return
 	}
+	// 归一化行尾：粘贴自 Windows/终端的内容可能带 \r\n 或裸 \r，
+	// 浏览器 pre-wrap 与 kickstart 注入都按 \n 工作，不归一化会挤成一行。
+	req.Content = normalizeScriptNewlines(req.Content)
 	if strings.TrimSpace(req.Content) == "" {
 		fail(w, http.StatusBadRequest, "empty_script", "脚本内容为空")
 		return
@@ -92,7 +95,7 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	content := sc.Content
 	if req.Content != nil {
-		content = *req.Content
+		content = normalizeScriptNewlines(*req.Content)
 		if strings.TrimSpace(content) == "" {
 			fail(w, http.StatusBadRequest, "empty_script", "脚本内容为空")
 			return

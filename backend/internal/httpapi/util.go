@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,6 +20,16 @@ func parseIntQuery(r *http.Request, name string) (int64, error) {
 		return 0, fmt.Errorf("missing %s", name)
 	}
 	return strconv.ParseInt(raw, 10, 64)
+}
+
+// normalizeScriptNewlines converts CRLF and lone CR line endings to LF.
+// Text pasted from Windows editors or some terminals carries \r\n or bare \r;
+// browsers and kickstart's base64 injection expect \n. Without this, a script
+// renders as one long line in the preview drawer and may misbehave at install
+// time (bash tolerates \r\n but not bare \r in shebangs and here-docs).
+func normalizeScriptNewlines(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	return strings.ReplaceAll(s, "\r", "\n")
 }
 
 // md5File computes the MD5 digest of a file (装机侧校验习惯用 MD5).

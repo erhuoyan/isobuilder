@@ -101,6 +101,41 @@ func TestScriptValidation(t *testing.T) {
 	}
 }
 
+// TestScriptNewlineNormalization guards against the "one long line" bug: text
+// pasted from Windows editors or some terminals carries \r\n or bare \r, which
+// browsers and the kickstart base64 injection treat as non-newline. Every
+// script entry point must normalize to \n before persisting.
+func TestScriptNewlineNormalization(t *testing.T) {
+	ts, _ := newTestServer(t)
+	defer ts.Close()
+
+	// CRLF on create; bare CR and CRLF mixed on update.
+	resp := postJSON(t, ts.URL+"/api/scripts", map[string]any{
+		"name":    "crlf",
+		"content": "#!/bin/bash\r\necho one\r\necho two\r\n",
+	})
+	var created struct {
+		Script model.Script `json:"script"`
+	}
+	decode(t, resp, &created)
+	want := "#!/bin/bash\necho one\necho two\n"
+	if created.Script.Content != want {
+		t.Fatalf("create: CRLF not normalized:\n got %q\nwant %q", created.Script.Content, want)
+	}
+
+	resp = putJSON(t, ts.URL+"/api/scripts/"+created.Script.ID, map[string]any{
+		"content": "echo a\recho b\r\necho c",
+	})
+	var updated struct {
+		Script model.Script `json:"script"`
+	}
+	decode(t, resp, &updated)
+	want = "echo a\necho b\necho c"
+	if updated.Script.Content != want {
+		t.Fatalf("update: CR not normalized:\n got %q\nwant %q", updated.Script.Content, want)
+	}
+}
+
 // TestScriptDeleteBlockedWhenBound proves a script still referenced by a
 // project cannot be deleted: otherwise a later build would lose its script.
 func TestScriptDeleteBlockedWhenBound(t *testing.T) {
