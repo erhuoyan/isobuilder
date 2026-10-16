@@ -38,18 +38,26 @@ for arg in "$@"; do
     esac
 done
 
-# 版本号：显式参数 > 最近的 git tag（去掉 v 前缀）> 0.0.0
-if [ -z "$VERSION" ]; then
-    VERSION="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)"
-    [ -n "$VERSION" ] || VERSION="0.0.0"
+# 版本号（显式参数可覆盖）：
+#   有 tag: git describe 完整输出，V 前缀归一为小写 v → v1.5-1680-ged42c0f-202610122038
+#          （tag + tag 后提交数 + 短 SHA + 紧贴的时间戳，一个 tag 可对应多次构建）
+#   无 tag: 分支名 + 短 SHA        → main-ged42c0f-202610122038
+#   裸仓库: 退回 short SHA          → ged42c0f-202610122038
+DESC="$(git -C "$ROOT" describe --tags 2>/dev/null || true)"
+if [ -n "$VERSION" ]; then
+    : # 显式参数优先
+elif [ -n "$DESC" ]; then
+    VERSION="$(echo "$DESC" | sed 's/^V/v/')"
+else
+    BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+    VERSION="${BRANCH}-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
 fi
 
-COMMIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
-STAMP="$(date +%Y%m%d-%H%M%S)"
-TAG="${VERSION}-${COMMIT}-${STAMP}"
+STAMP="$(date +%Y%m%d%H%M)"
+TAG="${VERSION}-${STAMP}"
 IMAGE="${REGISTRY:+${REGISTRY}/}${IMAGE_NAME}:${TAG}"
 
-echo "▶ 版本: $VERSION   commit: $COMMIT   时间: $STAMP"
+echo "▶ 版本: $VERSION   时间: $STAMP"
 echo "  镜像: $IMAGE"
 echo "  架构: linux/$ARCH"
 
