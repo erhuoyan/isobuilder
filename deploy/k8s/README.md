@@ -135,7 +135,7 @@ kubectl -n isobuilder rollout status deployment/isobuilder
 ## 5.1 CI 流水线（打 tag 才构建镜像）
 
 `.github/workflows/build-image.yml` 在推送 `v*` 开头的 tag 时自动：跑 backend
-测试 → 构建前端 → 交叉编译 Go → 打 `Dockerfile.prebuilt` 运行时镜像 → 推送
+测试 → 构建前端 → 交叉编译 Go → 打 `containerlize/standalone/Dockerfile` 运行时镜像 → 推送
 `hub-pub.jdcloud.com/iaas-jf/isobuilder:<镜像tag>`。日常 push main **不构建**
 ——镜像仓库只留发布镜像，不堆 WIP 产物。
 

@@ -9,7 +9,7 @@
 ├── jdos_build.yaml        任务②：应用镜像（app_image）← 平台约定名
 └── jdos_build_base.yaml   任务①：编译基础镜像（base_image）
 containerlize/
-├── base/Dockerfile.base   编译基础镜像（openEuler 22.03 + Go 1.26.9 + Node 22.12.0 + pnpm 12.6.0）
+├── base/Dockerfile         编译基础镜像（openEuler 22.03 + Go 1.26.9 + Node 22.12.0 + pnpm 12.6.0）
 └── app/Dockerfile         三阶段应用镜像（web → api → runtime）
 start.sh / stop.sh / start_container.sh   jdos 宿管启停脚本（根目录，app Dockerfile COPY 进 /home/admin/）
 ```
@@ -74,7 +74,7 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 
 ```bash
 # ① 基础镜像（需内网对象存储可达）
-docker build -t isobuilder-build-base:local -f containerlize/base/Dockerfile.base .
+docker build -t isobuilder-build-base:local -f containerlize/base/Dockerfile .
 # 拉取 jdos 产物做编译镜像：docker pull hub.is.jd.com/technical-service/yhpoc-ui:<tag>
 
 # ② 应用镜像

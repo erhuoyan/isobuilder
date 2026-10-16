@@ -10,7 +10,7 @@
 # 代价是解包一次 ISO 的全部内容落盘（≈ 1 倍原 ISO 体积 + 输出同等大小），
 # 所以数据目录 /data 必须挂足容量的卷。
 #
-# 需要更小/无需 QEMU 的构建路径见 Dockerfile.prebuilt + deploy/build-image.sh。
+# 需要更小/无需 QEMU 的构建路径见 containerlize/standalone/Dockerfile + deploy/build-image.sh。
 
 # ── Stage 1: 前端（BUILDPLATFORM，JS 产物与架构无关）────────────────────────
 FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS web

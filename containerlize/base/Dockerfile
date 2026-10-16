@@ -7,7 +7,7 @@
 #   构建产物在「制品管理 - 基础镜像」查看，供应用镜像构建引用。
 #
 # 本地调试：
-#   docker build -t isobuilder-build-base:latest -f Dockerfile.base .
+#   docker build -t isobuilder-build-base:latest -f containerlize/base/Dockerfile .
 
 FROM hub.is.jd.com/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS builder
 

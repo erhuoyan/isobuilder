@@ -1,6 +1,7 @@
-# isobuilder — 前置产物运行时镜像（无模拟、可离线、镜像最小）
+# isobuilder — 通用运行时镜像（standalone：无模拟、可离线、镜像最小）
 #
-# 与 Dockerfile 的区别：编译全部在宿主机完成，镜像只负责"装工具 + 拷贝"，
+# 通用构建路径，不绑定任何平台（docker compose / 手工 buildx / K8s / GitHub
+# Actions 均可用）。编译全部在宿主机完成，镜像只负责"装工具 + 拷贝"，
 # 因此不经过 QEMU，Apple Silicon 上也能直接产出 amd64 镜像。
 #
 # 推荐用构建脚本（自动打 <版本号>-<commit>-<时间> tag）:
@@ -11,14 +12,15 @@
 #   (cd frontend && pnpm build)
 #   (cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 #        go build -trimpath -ldflags="-s -w" -o dist/isobuilder ./cmd/isobuilder)
-#   docker buildx build --platform linux/amd64 -f Dockerfile.prebuilt -t isobuilder:0.1.0 --load .
+#   docker buildx build --platform linux/amd64 -f containerlize/standalone/Dockerfile -t isobuilder:0.1.0 --load .
 
 FROM --platform=$TARGETPLATFORM docker.io/rockylinux/rockylinux:9-minimal
 
 # 与主 Dockerfile 相同的运行时工具栈；镜像里不含编译器与 Node。
 #   xorriso 解包/重建/读卷标，syslinux→isohybrid，isomd5sum→implantisomd5
+# tzdata：容器日志与 /api/health 时间戳用本地时区（默认 UTC 会让排障时间差 8 小时）。
 RUN microdnf install -y \
-        xorriso syslinux syslinux-nonlinux isomd5sum ca-certificates && \
+        xorriso syslinux syslinux-nonlinux isomd5sum ca-certificates tzdata && \
     microdnf clean all && rm -rf /var/cache/yum /var/cache/dnf
 
 WORKDIR /opt/isobuilder
@@ -29,7 +31,8 @@ COPY backend/web/dist ./web/
 COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
-ENV ISOBUILDER_ADDR=:8080 \
+ENV TZ=Asia/Shanghai \
+    ISOBUILDER_ADDR=:8080 \
     ISOBUILDER_DATA_DIR=/data \
     ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
     ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts

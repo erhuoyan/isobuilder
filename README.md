@@ -173,8 +173,10 @@ isobuilder/
 │   ├── k8s/                Kubernetes 清单（共享 NFS PV/PVC + Deployment + Service）
 │   ├── isobuilder.service  systemd 单元
 │   └── env.example         /etc/isobuilder/env 模板
-├── Dockerfile              三阶段镜像（前端 pnpm build → 后端 go build → Rocky 运行时）
-├── Dockerfile.prebuilt     前置产物运行时镜像（宿主机交叉编译后只装工具）
+├── containerlize/          容器构建路径（三种，详见 JDOS.md）
+│   ├── standalone/         通用运行时镜像（宿主机出产物，容器只装工具+拷贝）
+│   ├── base/               编译基础镜像（jdos base_image）
+│   └── app/                jdos 应用镜像（三阶段）
 ├── docker-compose.yml
 ├── backend/                Go（标准库 mux + SQLite/PostgreSQL + S3 SDK）
 │   ├── cmd/isobuilder/     main

@@ -6,7 +6,7 @@
 # 日常 push main 不自动构建（镜像仓库只留发布镜像，不堆 WIP）。
 #
 # 复用 deploy/build-image.sh（宿主机 Go 原生编译 + Node 构建 →
-# 只用 Dockerfile.prebuilt 打运行时镜像）。GitHub Actions 的 amd64 runner
+# 只用 containerlize/standalone/Dockerfile 打运行时镜像）。GitHub Actions 的 amd64 runner
 # 与目标架构一致（GOOS=linux 原生即可），唯一进容器的步骤是 microdnf install。
 #
 # 所需 GitHub Secrets（Settings → Secrets and variables → Actions）：

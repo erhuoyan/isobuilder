@@ -83,7 +83,7 @@ TARGET="linux/$ARCH"
 # --provenance=false --sbom=false：不加 buildx 默认的 attestation manifest。
 # 否则多架构索引里会多出一个 unknown/unknown 平台条目（几 KB 的非镜像层），
 # 镜像仓库 UI、扫描器、同步工具都会把它当成异常条目。
-BUILDX_ARGS=(buildx build --platform "$TARGET" -f Dockerfile.prebuilt
+BUILDX_ARGS=(buildx build --platform "$TARGET" -f containerlize/standalone/Dockerfile
              -t "$IMAGE" --provenance=false --sbom=false)
 if [ "$PUSH" = "1" ]; then
     (cd "$ROOT" && docker "${BUILDX_ARGS[@]}" --push .)
