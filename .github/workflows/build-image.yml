@@ -1,6 +1,7 @@
-# push main 自动构建镜像并推送到 JD 仓库。
+# 打 tag 才构建镜像并推送到 JD 仓库：git tag v1.5 && git push origin v1.5
+# 日常 push main 不构建（镜像仓库只留发布镜像，不堆 WIP）。
 #
-# 设计：复用 deploy/build-image.sh（宿主机 Go 原生编译 + Node 构建 →
+# 复用 deploy/build-image.sh（宿主机 Go 原生编译 + Node 构建 →
 # 只用 Dockerfile.prebuilt 打运行时镜像）。GitHub Actions 的 amd64 runner
 # 与目标架构一致（GOOS=linux 原生即可），唯一进容器的步骤是 microdnf install。
 #
@@ -8,44 +9,44 @@
 #   JD_REGISTRY_USERNAME   hub-pub.jdcloud.com 镜像推送账号
 #   JD_REGISTRY_PASSWORD   对应密码/token
 # 凭据只存 GitHub Secrets（加密封存），不进代码、不进镜像、不进日志。
-# 版本号取 git tag（`git describe --tags --abbrev=0`），没有 tag 时 build-image.sh
-# 自动回落 0.0.0。发 release 就打 tag（git tag v0.2.0 && git push --tags）。
 #
-# 产出镜像 tag 形如 <版本>-<commit>-<时间>，部署：
+# 镜像 tag 形如 v1.5-1680-ged42c0f-202610122038：
+# git describe 完整输出（tag + tag 后提交数 + 短 SHA）+ 紧贴时间戳。
+# 同一个 tag 后继续提交再打一次同 tag 构建也能区分。部署：
 #   kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
 
 name: build-image
 
 on:
   push:
-    branches: [main]
+    tags: ['v*']   # 只有 v 开头的 tag 才触发
 
 concurrency:
   group: build-image-${{ github.ref }}
-  cancel-in-progress: true   # 连续 push 只保留最新一次构建
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # 固定版本：ubuntu-latest 2026-10-19 起切 Ubuntu 26，避免环境突变
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7   # v7 跑 Node 24，消除 Node 20 弃用警告
         with:
           fetch-depth: 0   # 完整历史+tag：build-image.sh 用 git describe 生成版本号
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm

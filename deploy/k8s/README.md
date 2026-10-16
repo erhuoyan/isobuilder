@@ -132,11 +132,22 @@ kubectl -n isobuilder rollout status deployment/isobuilder
 > ⚠️ 严禁 `kubectl delete pvc isobuilder-data`。该 SC 回收策略是 `Delete`，
 > 删 PVC 会连带删掉 NFS 上的整个子目录（基础镜像全没）。升级永远不需要删 PVC。
 
-## 5.1 CI 流水线（push main 自动构建镜像）
+## 5.1 CI 流水线（打 tag 才构建镜像）
 
-`.github/workflows/build-image.yml` 在每次 push `main` 时自动：跑 backend 测试 → 构建
-前端 → 交叉编译 Go → 打 `Dockerfile.prebuilt` 运行时镜像 → 推送
-`hub-pub.jdcloud.com/iaas-jf/isobuilder:<版本>-<commit>-<时间>`。
+`.github/workflows/build-image.yml` 在推送 `v*` 开头的 tag 时自动：跑 backend
+测试 → 构建前端 → 交叉编译 Go → 打 `Dockerfile.prebuilt` 运行时镜像 → 推送
+`hub-pub.jdcloud.com/iaas-jf/isobuilder:<镜像tag>`。日常 push main **不构建**
+——镜像仓库只留发布镜像，不堆 WIP 产物。
+
+发版：
+
+```bash
+git tag v1.5 && git push origin v1.5
+```
+
+镜像 tag 形如 `v1.5-1680-ged42c0f-202610122038`：git describe 完整输出
+（tag + tag 后提交数 + 短 SHA）+ 紧贴时间戳。同一个 tag 之后继续提交，
+再删掉重打同 tag 或打新 tag，构建出的镜像都精确可区分。
 
 认证需要**两个** GitHub Secrets（Settings → Secrets and variables → Actions）：
 
@@ -151,10 +162,6 @@ GitHub Secrets 本身加密存储，轮换密码只需更新 Secret，不动代�
 > 注意：`hub-pub.jdcloud.com` 若为内网仓库，GitHub Actions runner（公网）将无法推送，
 > 工作流会在 login/push 步骤失败。这种情况改推 GHCR（`ghcr.io/erhuoyan/isobuilder`，
 > 用内置 `GITHUB_TOKEN` 即可推送），在 K8s 侧配 imagePullSecret 拉取。
-
-**版本号**：流水线取最近 git tag（`git describe --tags --abbrev=0`），没有 tag 时
-回落 `0.0.0`。发版本就打 tag：`git tag v0.2.0 && git push origin v0.2.0`，
-之后 push main 构出的镜像版本号自动跟着走。
 
 ## 6. 数据库：PostgreSQL 与 SQLite 的切换
 
