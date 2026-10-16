@@ -5,7 +5,7 @@
 #
 # 本地调试（先在 jdos-base-image 分支构建基础镜像）：
 #   git checkout jdos-base-image && docker build -t isobuilder-build-base:local -f Dockerfile .
-#   git checkout feat/jdos-build
+#   git checkout jdos-build
 #   docker build --build-arg BUILD_BASE=isobuilder-build-base:latest \
 #        -f Dockerfile.jdos -t isobuilder:jdos .
 #

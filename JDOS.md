@@ -5,9 +5,9 @@
 | 分支 | 内容 | 任务 | 制品类型 | target |
 |---|---|---|---|---|
 | `jdos-base-image` | 仅 `Dockerfile`（无源码） | ① 编译基础镜像 | base_image | `builder` |
-| `feat/jdos-build` | 应用源码 + `Dockerfile.jdos` + 启停脚本 | ② 应用镜像 | app_image | `runtime` |
+| `jdos-build` | 应用源码 + `Dockerfile.jdos` + 启停脚本 | ② 应用镜像 | app_image | `runtime` |
 
-先在 `jdos-base-image` 分支跑①（控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest`），产物在「制品管理 → 基础镜像」；把仓库地址填进②的 build_args（`BUILD_BASE`）再在 `feat/jdos-build` 分支跑②。部署后挂 **NFS 共享存储** 做持久化。
+先在 `jdos-base-image` 分支跑①（控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest`），产物在「制品管理 → 基础镜像」；把仓库地址填进②的 build_args（`BUILD_BASE`）再在 `jdos-build` 分支跑②。部署后挂 **NFS 共享存储** 做持久化。
 
 ## 资源区与镜像前缀
 
@@ -74,8 +74,8 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 git checkout jdos-base-image
 docker build -t isobuilder-build-base:local -f Dockerfile .
 
-# 2. 应用镜像（切回 feat/jdos-build）
-git checkout feat/jdos-build
+# 2. 应用镜像（切回 jdos-build）
+git checkout jdos-build
 docker build --build-arg BUILD_BASE=isobuilder-build-base:local \
      -f Dockerfile.jdos -t isobuilder:jdos .
 
