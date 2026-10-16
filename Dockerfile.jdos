@@ -16,7 +16,7 @@
 ARG BUILD_BASE=harbor-pro.jd.local/REPLACE_ME/isobuilder-build-base:latest
 FROM ${BUILD_BASE} AS web
 WORKDIR /src
-ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com/
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
 # 先拷包清单装依赖，命中 layer 缓存：改业务代码不重装 node_modules
 COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./frontend/
 COPY frontend/packages ./frontend/packages
