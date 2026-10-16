@@ -14,9 +14,9 @@
 #   JD_REGISTRY_PASSWORD   对应密码/token
 # 凭据只存 GitHub Secrets（加密封存），不进代码、不进镜像、不进日志。
 #
-# 镜像 tag 形如 v1.5-1680-ged42c0f-202610122038：
-# git describe 完整输出（tag + tag 后提交数 + 短 SHA）+ 紧贴时间戳。
-# 同一个 tag 后继续提交再打一次同 tag 构建也能区分。部署：
+# 镜像 tag 形如 v0.4.0-ga0c5ac1-202610160730：版本 tag + 短 SHA + 时间戳。
+# 构建由推 tag 触发，一个 tag 只触发一次，无需距离号；短 SHA 把镜像与 commit 锁死。
+# tag 命名约定 x.y.z 三段。部署：
 on:
   push:
     tags: ['v*']          # 推 v* tag 自动触发（正式发版）

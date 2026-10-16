@@ -139,15 +139,14 @@ kubectl -n isobuilder rollout status deployment/isobuilder
 `hub-pub.jdcloud.com/iaas-jf/isobuilder:<镜像tag>`。日常 push main **不构建**
 ——镜像仓库只留发布镜像，不堆 WIP 产物。
 
-发版：
+发版（tag 命名约定三段 `x.y.z`）：
 
 ```bash
-git tag v1.5 && git push origin v1.5
+git tag v0.4.0 && git push origin v0.4.0
 ```
 
-镜像 tag 形如 `v1.5-1680-ged42c0f-202610122038`：git describe 完整输出
-（tag + tag 后提交数 + 短 SHA）+ 紧贴时间戳。同一个 tag 之后继续提交，
-再删掉重打同 tag 或打新 tag，构建出的镜像都精确可区分。
+镜像 tag 形如 `v0.4.0-ga0c5ac1-202610160730`：版本 tag + 短 SHA + 时间戳。
+构建由推 tag 触发，一个 tag 只触发一次；短 SHA 把镜像与 commit 锁死，部署后可溯源。
 
 认证需要**两个** GitHub Secrets（Settings → Secrets and variables → Actions）：
 

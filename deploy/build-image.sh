@@ -39,18 +39,19 @@ for arg in "$@"; do
 done
 
 # 版本号（显式参数可覆盖）：
-#   有 tag: git describe 完整输出，V 前缀归一为小写 v → v1.5-1680-ged42c0f-202610122038
-#          （tag + tag 后提交数 + 短 SHA + 紧贴的时间戳，一个 tag 可对应多次构建）
-#   无 tag: 分支名 + 短 SHA        → main-ged42c0f-202610122038
-#   裸仓库: 退回 short SHA          → ged42c0f-202610122038
-DESC="$(git -C "$ROOT" describe --tags --long 2>/dev/null || true)"
+#   有 tag: 最近 tag + 短 SHA → v0.4-ga0c5ac1-202610160730
+#   无 tag: 分支名 + 短 SHA   → main-ga0c5ac1-202610160730
+# 构建由推 tag 触发，同一 tag 不会触发两次，距离号（tag 后提交数）无意义；
+# 保留短 SHA 是为了把镜像 tag 与 git commit 锁死，部署后可溯源。
+TAGNAME="$(git -C "$ROOT" describe --tags --abbrev=0 2>/dev/null | sed 's/^V/v/' || true)"
+SHORTSHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
 if [ -n "$VERSION" ]; then
     : # 显式参数优先
-elif [ -n "$DESC" ]; then
-    VERSION="$(echo "$DESC" | sed 's/^V/v/')"
+elif [ -n "$TAGNAME" ]; then
+    VERSION="${TAGNAME}-${SHORTSHA}"
 else
     BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
-    VERSION="${BRANCH}-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo nogit)"
+    VERSION="${BRANCH}-${SHORTSHA}"
 fi
 
 STAMP="$(date +%Y%m%d%H%M)"
