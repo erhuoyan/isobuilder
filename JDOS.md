@@ -31,7 +31,7 @@ start.sh / stop.sh / start_container.sh   jdos 宿管启停脚本（根目录，
 
 ## 资源区与镜像
 
-云翼前缀 `harbor-pro.jd.local`（测试区 `harbor-test.jd.local`）；jdos 产物实际推 `hub.is.jd.com/<项目名>/`。内网仓库自签名证书：本地构建前需在 docker daemon 配置 `"insecure-registries"` 或先 `docker pull` FROM 镜像再 build（官方文档报错处理一节）。
+统一使用 `hub.is.jd.com` 仓库地址（实测办公网/部署机/本机均可解析；jdos 构建机实际拉取推送也走此入口，digest 与 harbor-pro 的同源镜像一致）。内网仓库自签名证书：本地构建需在 docker daemon 配置 `"insecure-registries": ["hub.is.jd.com", ...]`。
 
 ## 运行时内容
 

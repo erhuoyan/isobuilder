@@ -37,7 +37,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/i
 # ── Stage 3: 运行时 ────────────────────────────────────────────────────────────
 # 四个 ISO 工具包与 Go 代码路径发现匹配（部署机实测）：
 #   xorriso / isohybrid / implantisomd5 → /usr/bin；isohdpfx.bin → /usr/share/syslinux/
-FROM harbor-pro.jd.local/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS runtime
+FROM hub.is.jd.com/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS runtime
 
 RUN dnf install -y --setopt=install_weak_deps=False \
         xorriso syslinux syslinux-nonlinux isomd5sum ca-certificates \

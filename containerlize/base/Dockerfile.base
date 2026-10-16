@@ -9,7 +9,7 @@
 # 本地调试：
 #   docker build -t isobuilder-build-base:latest -f Dockerfile.base .
 
-FROM harbor-pro.jd.local/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS builder
+FROM hub.is.jd.com/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS builder
 
 # xz 用于解压 Node 的 .tar.xz；git/ca-certificates 供 go mod 与 https 下载使用。
 # openEuler 默认源 repo.openeuler.org 即国内源，无需另外换源。
@@ -23,10 +23,10 @@ RUN dnf install -y --setopt=install_weak_deps=False \
 ENV GOTOOLCHAIN=local
 RUN curl -fsSL https://s3-internal.cn-north-1.jdcloud-oss.com/0-yunhai-poc/iso-builder/go1.26.9.linux-amd64.tar.gz \
         -o /tmp/go.tgz && \
-    rm -rf /lib/go && mkdir -p /lib && \
-    tar -xzf /tmp/go.tgz -C /lib && rm -f /tmp/go.tgz
-ENV GOROOT=/lib/go \
-    PATH=/lib/go/bin:$PATH
+    rm -rf /usr/local/go && \
+    tar -xzf /tmp/go.tgz -C /usr/local && rm -f /tmp/go.tgz
+ENV GOROOT=/usr/local/go \
+    PATH=/usr/local/go/bin:$PATH
 
 # Go module 代理走京东内网 artifactory；海外构建用：
 #   docker build --build-arg GOPROXY=https://proxy.golang.org,direct ...
@@ -36,9 +36,9 @@ ENV GOPROXY=${GOPROXY} GOSUMDB=off
 # Node 22.12.0（同样托管在内网对象存储；linux-x64 → 仅支持 x86 架构构建）
 RUN curl -fsSL https://s3-internal.cn-north-1.jdcloud-oss.com/0-yunhai-poc/iso-builder/node-v22.12.0-linux-x64.tar.xz \
         -o /tmp/node.tar.xz && \
-    rm -rf /lib/node-v22.12.0-linux-x64 && \
-    tar -xJf /tmp/node.tar.xz -C /lib && rm -f /tmp/node.tar.xz
-ENV PATH=/lib/node-v22.12.0-linux-x64/bin:$PATH
+    rm -rf /usr/local/node-v22.12.0-linux-x64 && \
+    tar -xJf /tmp/node.tar.xz -C /usr/local && rm -f /tmp/node.tar.xz
+ENV PATH=/usr/local/node-v22.12.0-linux-x64/bin:$PATH
 
 # pnpm：直接 npm 全局安装，绕开 corepack（其签名验证与 npmmirror 镜像源不兼容）
 RUN npm install -g pnpm@12.6.0 --registry=https://registry.npmmirror.com
