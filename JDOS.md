@@ -16,9 +16,7 @@ start.sh / stop.sh / start_container.sh   jdos 宿管启停入口（随镜像烤
 bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录；不进镜像，部署时手动复制到 /export/App/bin/）
 ```
 
-> ⚠️ jdos 约定的配置文件名是 **`.jdos/jdos_build.yaml`**（单个）。一个 yaml 只能定义一个 `artifact_type`，官方示例靠拆分支绕开此限制。本仓库用 `jdos_build_base.yaml` 承载基础镜像任务，**平台不识别非约定名时**在临时分支把该文件改名为 `jdos_build.yaml` 再建任务。
 
-> ⚠️ jdos 约定的配置文件名是 **`.jdos/jdos_build.yaml`**（单个）。一个 yaml 只能定义一个 `artifact_type`，官方示例靠拆分支绕开此限制。本仓库用 `jdos_build_base.yaml` 承载基础镜像任务——**平台若不识别非约定名**，回退用已验证可用的独立分支：`jdos-base-image`（任务①）+ `jdos-build`（任务②，其 `.jdos/jdos_build.yaml` 指向容器镜像教程路径）。
 
 ## 两个构建任务
 
