@@ -16,14 +16,11 @@
 ARG BUILD_BASE=harbor-pro.jd.local/REPLACE_ME/isobuilder-build-base:latest
 FROM ${BUILD_BASE} AS web
 WORKDIR /src
-ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
-    COREPACK_INTEGRITY_KEYS=0
+# pnpm 已随编译基础镜像（BUILD_BASE）npm 全局安装，无需再装
 # 先拷包清单装依赖，命中 layer 缓存：改业务代码不重装 node_modules
 COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./frontend/
 COPY frontend/packages ./frontend/packages
-RUN cd frontend && \
-    corepack enable && corepack prepare pnpm@12.6.0 --activate && \
-    pnpm install --frozen-lockfile
+RUN cd frontend && pnpm install --frozen-lockfile
 COPY frontend/ ./frontend/
 # vite build.outDir=../backend/web/dist（相对 frontend 工作目录）→ /src/backend/web/dist
 RUN cd frontend && pnpm build
