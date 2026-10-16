@@ -1,15 +1,13 @@
 # jdos 原生构建说明（云翼资源区）
 
-**全部在单个分支 `feat/jdos-build` 上完成**。jdos 原生构建的配置（Dockerfile 路径 / 制品类型 / target / build args）全部在**控制台建任务时填写**，不在代码库放 `.jdos/jdos_build.yaml`——同一分支可以建多个任务指向各自的 Dockerfile，无需为不同制品类型开多个分支。
+**两个分支各司其职**，构建配置（制品类型 / target / build args）全在 jdos 控制台建任务时填写，不放 `.jdos/jdos_build.yaml`：
 
-两个构建任务：
-
-| 任务 | 制品类型 | Dockerfile | build_target | 备注 |
+| 分支 | 内容 | 任务 | 制品类型 | target |
 |---|---|---|---|---|
-| ① 编译基础镜像 | base_image | `Dockerfile.base` | `builder` | 控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest` |
-| ② 应用镜像 | app_image | `Dockerfile.jdos` | `runtime` | build_args 填 `BUILD_BASE=<任务①制品仓库地址>` |
+| `jdos-base-image` | 仅 `Dockerfile`（无源码） | ① 编译基础镜像 | base_image | `builder` |
+| `feat/jdos-build` | 应用源码 + `Dockerfile.jdos` + 启停脚本 | ② 应用镜像 | app_image | `runtime` |
 
-先跑①，产物在「制品管理 → 基础镜像」，把仓库地址填进②的 build_args 再跑②。部署后挂 **NFS 共享存储** 做持久化。
+先在 `jdos-base-image` 分支跑①（控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest`），产物在「制品管理 → 基础镜像」；把仓库地址填进②的 build_args（`BUILD_BASE`）再在 `feat/jdos-build` 分支跑②。部署后挂 **NFS 共享存储** 做持久化。
 
 ## 资源区与镜像前缀
 
@@ -17,10 +15,9 @@
 
 ---
 
-## 构建内容
+## 基础镜像（分支 jdos-base-image）
 
-**任务①（base_image）** 装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。
-
+装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。工具链升级只改该分支的 Dockerfile，详见其 README。
 
 ## 应用镜像（制品类型 app_image）
 
@@ -73,14 +70,16 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 ## 本地调试
 
 ```bash
-# 基础镜像（需内网对象存储可达，或手工把 SDK URL 换成等价地址）
-docker build -t isobuilder-build-base:local -f Dockerfile.base .
+# 1. 基础镜像（先切到 jdos-base-image 分支；需内网对象存储可达）
+git checkout jdos-base-image
+docker build -t isobuilder-build-base:local -f Dockerfile .
 
-# 应用镜像
+# 2. 应用镜像（切回 feat/jdos-build）
+git checkout feat/jdos-build
 docker build --build-arg BUILD_BASE=isobuilder-build-base:local \
      -f Dockerfile.jdos -t isobuilder:jdos .
 
-# 本地跑（无 jdos 宿管，手工启动）
+# 3. 本地跑（无 jdos 宿管，手工启动）
 docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos \
      /opt/isobuilder/isobuilder
 ```

@@ -1,10 +1,11 @@
 # isobuilder — jdos 原生构建应用镜像（云翼资源区 harbor-pro）
 #
-# 前置：先用 Dockerfile.base 构建出「编译基础镜像」，把下方 ARG BUILD_BASE
-#       改为该制品的实际仓库地址（或在 jdos 控制台任务的 build_args 里传）。
+# 前置：jdos-base-image 分支的构建任务已产出「编译基础镜像」，
+#       把下方 ARG BUILD_BASE 改为该制品的实际仓库地址（或在控制台任务 build_args 传）。
 #
-# 本地调试（先本地构建基础镜像）：
-#   docker build -t isobuilder-build-base:latest -f Dockerfile.base .
+# 本地调试（先在 jdos-base-image 分支构建基础镜像）：
+#   git checkout jdos-base-image && docker build -t isobuilder-build-base:local -f Dockerfile .
+#   git checkout feat/jdos-build
 #   docker build --build-arg BUILD_BASE=isobuilder-build-base:latest \
 #        -f Dockerfile.jdos -t isobuilder:jdos .
 #
