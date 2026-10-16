@@ -1,11 +1,10 @@
 # isobuilder — jdos 原生构建应用镜像（云翼资源区 harbor-pro）
 #
-# 前置：先用 containerlize/base/Dockerfile 构建出「编译基础镜像」，
-#       将下方 ARG BUILD_BASE 替换为该制品的实际仓库地址
-#       （或在 .jdos/jdos_build.yaml 的 build_args 里传）。
+# 前置：先用 Dockerfile.base 构建出「编译基础镜像」，把下方 ARG BUILD_BASE
+#       替换为该制品的实际仓库地址（或在 .jdos/jdos_build.yaml 的 build_args 里传）。
 #
 # 本地调试（先本地构建基础镜像）：
-#   docker build -t isobuilder-build-base:latest -f containerlize/base/Dockerfile .
+#   docker build -t isobuilder-build-base:latest -f Dockerfile.base .
 #   docker build --build-arg BUILD_BASE=isobuilder-build-base:latest \
 #        -f Dockerfile.jdos -t isobuilder:jdos .
 #
@@ -61,7 +60,7 @@ COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
 # jdos 启停脚本（chown 的一次性赋权，与示例约定一致）
-COPY containerlize/runtime/start.sh containerlize/runtime/stop.sh containerlize/runtime/start_container.sh /home/admin/
+COPY start.sh stop.sh start_container.sh /home/admin/
 RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
     chown admin:admin /home/admin/{start,stop,start_container}.sh
 

@@ -1,6 +1,6 @@
 # jdos 原生构建说明（云翼资源区）
 
-isobuilder 在京东 jdos 平台分两步构建：先构建**编译基础镜像**（Go + Node + pnpm），再用它构建**应用镜像**（三阶段：前端 → 后端 → 运行时），部署后挂 **NFS 共享存储** 做持久化。
+isobuilder 在京东 jdos 平台分两步构建，**两个独立分支、各一个 `.jdos/jdos_build.yaml`**（jdos 每分支只认一个配置）：先在 `jdos-base-image` 分支构建**编译基础镜像**（Go + Node + pnpm），再在 `feat/jdos-build` 分支构建**应用镜像**（三阶段：前端 → 后端 → 运行时），部署后挂 **NFS 共享存储** 做持久化。
 
 ## 资源区与镜像前缀
 
@@ -10,16 +10,9 @@ isobuilder 在京东 jdos 平台分两步构建：先构建**编译基础镜像*
 
 ## 第一步：编译基础镜像（制品类型 base_image）
 
-| 项 | 值 |
-|---|---|
-| Dockerfile | `containerlize/base/Dockerfile` |
-| 配置 | `containerlize/base/jdos_build.yaml` |
-| 基础镜像（控制台选） | `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest` |
-| build_target | `builder` |
+**分支 `jdos-base-image`**：`.jdos/jdos_build.yaml` 指向根目录 `Dockerfile.base`，target=`builder`；控制台基础镜像选 `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest`。
 
-装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 与 tini 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。
-
-> 若控制台只识别 `.jdos/jdos_build.yaml`，在一个独立分支（如 `jdos-base-image`）把 `containerlize/base/jdos_build.yaml` 复制为 `.jdos/jdos_build.yaml`，指向 `containerlize/base/Dockerfile`。
+装入：Go 1.26.9 / Node 22.12.0 / pnpm 12.6.0。SDK 从京云内网对象存储拉取；GOPROXY 走 `artifactory.jd.com`，npm/pnpm 走 `registry.npmmirror.com` 国内源。
 
 构建产物在「制品管理 → 基础镜像」，记下仓库地址，下一步用。
 
@@ -76,7 +69,7 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 
 ```bash
 # 基础镜像（需内网对象存储可达，或手工把 SDK URL 换成等价地址）
-docker build -t isobuilder-build-base:local -f containerlize/base/Dockerfile .
+docker build -t isobuilder-build-base:local -f Dockerfile.base .
 
 # 应用镜像
 docker build --build-arg BUILD_BASE=isobuilder-build-base:local \

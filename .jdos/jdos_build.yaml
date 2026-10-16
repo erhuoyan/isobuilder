@@ -1,7 +1,7 @@
-# isobuilder 应用镜像的 jdos 原生构建配置。
+# isobuilder 应用镜像的 jdos 原生构建配置（feat/jdos-build 分支）。
 #
-# 先决条件：已用 containerlize/base/ 的配置构建出编译基础镜像，
-# 并把下述 BUILD_BASE 改为该制品的真实仓库地址。
+# 先决条件：分支 jdos-base-image 已构建出编译基础镜像，
+# 把下述 BUILD_BASE 改为该制品的真实仓库地址。
 version: v1alpha
 
 architecture: x86

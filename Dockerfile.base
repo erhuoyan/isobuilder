@@ -1,15 +1,13 @@
 # isobuilder 编译基础镜像：openEuler 22.03 LTS + Go 1.26.9 + Node 22.12.0 + pnpm
 #
 # jdos 用法（制品类型 = 基础镜像）：
-#   1. 在 jdos 控制台创建原生构建任务，制品类型选 base_image，
-#      代码库选本仓库、分支 feat/jdos-build；
-#   2. 控制台基础镜像选 jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest
-#      （jdos 会用控制台选定的镜像替换本文件的 FROM，两者一致正好）；
-#   3. 构建产物在「制品管理 - 基础镜像」查看，供应用镜像构建引用。
-#      配置文件见同目录 jdos_build.yaml。
+#   分支 jdos-base-image 的 .jdos/jdos_build.yaml 指向本文件；
+#   控制台基础镜像选 jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest
+#   （jdos 会用控制台选定的镜像替换本文件的 FROM，两者一致正好）；
+#   构建产物在「制品管理 - 基础镜像」查看，供应用镜像构建引用。
 #
 # 本地调试：
-#   docker build -t isobuilder-build-base:latest -f containerlize/base/Dockerfile .
+#   docker build -t isobuilder-build-base:latest -f Dockerfile.base .
 
 FROM harbor-pro.jd.local/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS builder
 
