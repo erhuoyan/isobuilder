@@ -13,7 +13,7 @@
 #        /opt/isobuilder/isobuilder
 
 # ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
-ARG BUILD_BASE=hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.215657-1a8f8ec5-Q9jAzg
+ARG BUILD_BASE=hub.is.jd.com/technical-service/yhpoc-ui-base:v20261016.232248-fb7b51ba-h27bdb
 FROM ${BUILD_BASE} AS web
 WORKDIR /src
 # 先拷包清单装依赖（依赖未变时复用层缓存；build_context=. → COPY 相对仓库根）
@@ -25,6 +25,9 @@ COPY frontend/ ./frontend/
 RUN cd frontend && pnpm build
 
 # ── Stage 2: 后端（编译基础镜像里的 Go，CGO 关闭纯静态编译）────────────────────
+# ARG 在此重新声明：首个全局 ARG 的跨阶段求值在旧 buildkit 上不保证，显式声明让
+# ${BUILD_BASE} 在本阶段确定可用（值继承自首个 ARG / build_args）。
+ARG BUILD_BASE
 FROM ${BUILD_BASE} AS api
 ARG GOPROXY=http://artifactory.jd.com/api/go/go_virtual
 ENV GOPROXY=${GOPROXY} GOSUMDB=off GOTOOLCHAIN=local
