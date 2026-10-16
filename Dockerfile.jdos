@@ -1,0 +1,82 @@
+# isobuilder — jdos 原生构建应用镜像（云翼资源区 harbor-pro）
+#
+# 前置：先用 containerlize/base/Dockerfile 构建出「编译基础镜像」，
+#       将下方 ARG BUILD_BASE 替换为该制品的实际仓库地址
+#       （或在 .jdos/jdos_build.yaml 的 build_args 里传）。
+#
+# 本地调试（先本地构建基础镜像）：
+#   docker build -t isobuilder-build-base:latest -f containerlize/base/Dockerfile .
+#   docker build --build-arg BUILD_BASE=isobuilder-build-base:latest \
+#        -f Dockerfile.jdos -t isobuilder:jdos .
+#
+# 运行（与 Dockerfile.prebuilt 一致：/data 挂卷、:8080、解包用 xorriso 无特权）：
+#   docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos
+
+# ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
+ARG BUILD_BASE=harbor-pro.jd.local/REPLACE_ME/isobuilder-build-base:latest
+FROM ${BUILD_BASE} AS web
+WORKDIR /src
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com/
+# 先拷包清单装依赖，命中 layer 缓存：改业务代码不重装 node_modules
+COPY frontend/package.json frontend/pnpm-workspace.yaml frontend/pnpm-lock.yaml ./frontend/
+COPY frontend/packages ./frontend/packages
+RUN cd frontend && \
+    corepack enable && corepack prepare pnpm@12.6.0 --activate && \
+    pnpm install --frozen-lockfile
+COPY frontend/ ./frontend/
+# vite build.outDir=../backend/web/dist（相对 frontend 工作目录）→ /src/backend/web/dist
+RUN cd frontend && pnpm build
+
+# ── Stage 2: 后端（编译基础镜像里的 Go，CGO 关闭纯静态编译）────────────────────
+FROM ${BUILD_BASE} AS api
+ARG GOPROXY=http://artifactory.jd.com/api/go/go_virtual
+ENV GOPROXY=${GOPROXY} GOSUMDB=off GOTOOLCHAIN=local
+WORKDIR /src/backend
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/ ./
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/isobuilder
+
+# ── Stage 3: 运行时（openEuler 22.03 + ISO 工具链 + jdos 管控组件）────────────
+# 四个工具包已在部署机容器内验证，与 Go 代码的路径发现完全匹配：
+#   xorriso / isohybrid / implantisomd5 → /usr/bin（exec.LookPath 命中）
+#   isohdpfx.bin → /usr/share/syslinux/isohdpfx.bin（代码路径表首位命中）
+# jdos 宿管组件（必须）：openssh-server 提供容器内 sshd，crontabs 让 crond 有配置可跑，
+#   tini 收尸僵尸进程，start/stop/start_container.sh 支撑控制台启停。
+FROM harbor-pro.jd.local/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS runtime
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        xorriso syslinux syslinux-nonlinux isomd5sum ca-certificates \
+        openssh-server crontabs && \
+    dnf clean all && rm -rf /var/cache/dnf
+
+# tini 防僵尸进程（jdos 约定放 /home/admin/tini）
+RUN curl -fsSL http://s3-internal.cn-north-1.jdcloud-oss.com/jdos-build-public/tools/tini/tini-amd64-v0.19.0 \
+        -o /home/admin/tini && chmod 0755 /home/admin/tini
+
+WORKDIR /opt/isobuilder
+COPY --from=api /out/isobuilder ./isobuilder
+COPY --from=web /src/backend/web/dist ./web/
+COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
+COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
+
+# jdos 启停脚本（chown 的一次性赋权，与示例约定一致）
+COPY containerlize/runtime/start.sh containerlize/runtime/stop.sh containerlize/runtime/start_container.sh /home/admin/
+RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
+    chown admin:admin /home/admin/{start,stop,start_container}.sh
+
+# sshd 首跑需生成 host key
+RUN ssh-keygen -A
+
+ENV ISOBUILDER_ADDR=:8080 \
+    ISOBUILDER_DATA_DIR=/data \
+    ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
+    ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
+
+VOLUME ["/data"]
+EXPOSE 8080
+
+# jdos 约定的固定 ENTRYPOINT（不可改）：
+#   sshd/crond 供宿管 Agent 用；start_container.sh 以 setsid+tini 拉起 isobuilder；
+#   sleep 9999999d 保活容器（服务崩溃时容器不退出，配合控制台重启策略）。
+ENTRYPOINT /home/admin/tini -- bash -c "/usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"

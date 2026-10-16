@@ -1,0 +1,15 @@
+# isobuilder 应用镜像的 jdos 原生构建配置。
+#
+# 先决条件：已用 containerlize/base/ 的配置构建出编译基础镜像，
+# 并把下述 BUILD_BASE 改为该制品的真实仓库地址。
+version: v1alpha
+
+architecture: x86
+artifact_type: app_image
+dockerfile_path: .
+dockerfile_name: Dockerfile.jdos
+build_context: .
+build_target: runtime
+build_args:
+  # 制品仓库地址，形如 harbor-pro.jd.local/<你的harbor项目>/isobuilder-build-base:latest
+  BUILD_BASE: harbor-pro.jd.local/REPLACE_ME/isobuilder-build-base:latest

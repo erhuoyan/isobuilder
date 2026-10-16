@@ -1,0 +1,13 @@
+# 编译基础镜像（Go + Node + pnpm）的 jdos 原生构建配置。
+#
+# jdos 约定配置文件位于 .jdos/jdos_build.yaml；基础镜像构建与应用镜像构建是
+# 两个独立的 jdos 原生构建任务，分别指向各自的 Dockerfile。若控制台不支持
+# 指定配置路径，可在单独分支上将本文件改名为 .jdos/jdos_build.yaml 再建任务。
+version: v1alpha
+
+architecture: x86
+artifact_type: base_image
+dockerfile_path: containerlize/base
+dockerfile_name: Dockerfile
+build_context: .
+build_target: builder
