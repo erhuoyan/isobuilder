@@ -1,0 +1,13 @@
+# 编译基础镜像（Go + Node + pnpm）的 jdos 原生构建配置。
+#
+# ⚠️ jdos 约定的配置文件名为 .jdos/jdos_build.yaml（单个）；本仓库一个 main 分支
+#    承载两步构建，故用基座名区分。若控制台只认 jdos_build.yaml，回退方案：
+#    在 jdos-base-image 分支（已验证可用）上跑本任务。
+version: v1alpha
+
+architecture: x86
+artifact_type: base_image
+dockerfile_path: containerlize/base
+dockerfile_name: Dockerfile.base
+build_context: .
+build_target: builder
