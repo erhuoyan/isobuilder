@@ -6,8 +6,9 @@
 #   → manager.Wait（等构建 goroutine 收尾）
 # 直接 kill -9 会留下孤儿 xorriso 进程与半截工作目录。超时才 KILL 兜底。
 # ***** USER CODE START（唯一工程项：BIN 改成你的二进制名，到 END 为止）*****
+# 进程名，改这里
+BIN=isobuilder
 
-# ***** USER CODE END *****
 
 if ! PIDPROC=$(pidof "$BIN"); then
   echo "$BIN is not running"
