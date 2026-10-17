@@ -3,7 +3,10 @@
 # 改完在控制台点「停止/启动」即生效，无需重打镜像）。
 #
 # 平台入口 /home/admin/start.sh 委托到本脚本。
-set -uo pipefail
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ 【工程段】以下为 isobuilder 专属：主目录/二进制名/日志路径/环境变量。┃
+# ┃ 换项目时改这段即可，其余勿动。                                    ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
 # 应用主目录与可执行文件（二进制烤在镜像里，不能放 /export——拉起时被挂载覆盖）
 APP_HOME=/opt/isobuilder
@@ -15,7 +18,9 @@ export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/data}"
 export ISOBUILDER_WEB_DIR="${ISOBUILDER_WEB_DIR:-$APP_HOME/web}"
 export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
-mkdir -p "$LOG_DIR"
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ 【模板段】以下启动逻辑通用（pidof 幂等 + nohup 后台拉起），勿动。   ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
 PIDPROC=$(pidof "$BIN" || true)
 if [[ -z "$PIDPROC" ]]; then

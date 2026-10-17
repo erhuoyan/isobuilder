@@ -39,7 +39,10 @@ RUN go mod download
 COPY backend/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/isobuilder
 
-# ── Stage 3: 运行时 ────────────────────────────────────────────────────────────
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃ 【模板段】运行时层（Stage 3）：宿管组件 + 启停脚本烤入 + ENTRYPOINT  ┃
+# ┃ 跨项目复制默认可用；唯一按需改：RUNTIME_PKGS（工具包）与 ENV 段。     ┃
+# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 # 四个 ISO 工具包与 Go 代码路径发现匹配（部署机实测）：
 #   xorriso / isohybrid / implantisomd5 → /usr/bin；isohdpfx.bin → /usr/share/syslinux/
 FROM hub.is.jd.com/jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest AS runtime
