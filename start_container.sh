@@ -44,14 +44,18 @@ curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
          /export/log/isobuilder
 chown -R admin:admin /data /export/log/isobuilder
+# 预创建引导日志并 chown——root 之后 tee -a 创建的文件属主是 root，
+# admin（start.sh 及更深层）写不进就丢日志。chown -R 在文件创建前跑无效。
+BOOT_LOG=/export/log/isobuilder/boot.log
+touch "$BOOT_LOG" && chown admin:admin "$BOOT_LOG" && chmod 0644 "$BOOT_LOG"
 
 # 引导日志：容器每次拉起都追加，排查启动失败的第一证据源
 BOOT_LOG=/export/log/isobuilder/boot.log
 log() { echo "[$(date '+%F %T')] [start_container] $*" | tee -a "$BOOT_LOG"; }
 
 log "===== 容器启动 begin ====="
-log "user=$(id -un) uid=$(id -u)"
-log "真实脚本是否存在: $([ -f /home/export/App/bin/start.sh ] && echo 是 || echo 否)"
+# 引导日志：容器每次拉起都追加，排查启动失败的第一证据源
+log() { echo "[$(date '+%F %T')] [start_container] $*" | tee -a "$BOOT_LOG"; }
 log "平台入口是否存在: $([ -f /home/admin/start.sh ] && echo 是 || echo 否)"
 log "admin 用户: $(id admin 2>&1 | head -c 120)"
 log "env DB_URL 设置: $([ -n "$ISOBUILDER_DB_URL" ] && echo 已注入 || echo 空)"

@@ -1,22 +1,27 @@
 #!/bin/bash
 # jdos 平台启动入口。真实启动脚本在镜像层 /home/export/App/bin/start.sh。
-set -uo pipefail
+set -o pipefail   # 不用 -u：/etc/profile 引用未定义变量会炸（HISTCONTROL 等）
 
 LOG_DIR=/export/log/isobuilder
 BOOT_LOG=$LOG_DIR/boot.log
-log() { echo "[$(date '+%F %T')] [start.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+log() { echo "[$(date '+%F %T')] [start.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [start.sh] $*"; }
+
+# 已是 admin 就直跑（start_container 已 su 过来），root 才需要 su——避免 admin→admin 要密码
+exec_as_admin() {
+  if [ "$(id -un)" = "admin" ]; then bash "$@"; else su -m admin -c "bash $*"; fi
+}
 
 log "===== 平台 start.sh begin ====="
 log "user=$(id -un) uid=$(id -u)"
 
-source /etc/profile 2>&1 | while read -r l; do log "profile: $l"; done || true
+source /etc/profile 2>/dev/null || true
 log "sourced /etc/profile"
 
 if [ -f "/home/admin/start_before.sh" ]; then
     cd /home/admin
     chmod 777 start_before.sh
     log "执行 start_before.sh"
-    su -m admin -c ./start_before.sh 2>&1 | tee -a "$BOOT_LOG"
+    exec_as_admin /home/admin/start_before.sh 2>&1 | tee -a "$BOOT_LOG"
 fi
 
 REAL_START=/home/export/App/bin/start.sh
@@ -26,8 +31,8 @@ if [ ! -f "$REAL_START" ]; then
 fi
 log "委托到 $REAL_START"
 cd /home/export/App/bin/
-chmod +x start.sh
-su -m admin -c ./start.sh 2>&1 | tee -a "$BOOT_LOG"
+chmod +x start.sh 2>/dev/null || true
+exec_as_admin /home/export/App/bin/start.sh 2>&1 | tee -a "$BOOT_LOG"
 REAL_RC=${PIPESTATUS[0]}
 log "真实脚本返回码=${REAL_RC}"
 
@@ -45,7 +50,7 @@ if [ -f "/home/admin/start_after.sh" ]; then
     cd /home/admin
     chmod 777 start_after.sh
     log "执行 start_after.sh"
-    su -m admin -c ./start_after.sh 2>&1 | tee -a "$BOOT_LOG"
+    exec_as_admin /home/admin/start_after.sh 2>&1 | tee -a "$BOOT_LOG"
 fi
 log "===== 平台 start.sh end ====="
 exit ${REAL_RC:-0}

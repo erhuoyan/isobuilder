@@ -1,31 +1,34 @@
 #!/bin/bash
 # jdos 平台停止入口。真实停止脚本在镜像层 /home/export/App/bin/stop.sh。
-set -uo pipefail
+set -o pipefail   # 不用 -u：/etc/profile 引用未定义变量会炸
 
 LOG_DIR=/export/log/isobuilder
 BOOT_LOG=$LOG_DIR/boot.log
-log() { echo "[$(date '+%F %T')] [stop.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+log() { echo "[$(date '+%F %T')] [stop.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [stop.sh] $*"; }
+
+exec_as_admin() {
+  if [ "$(id -un)" = "admin" ]; then bash "$@"; else su -m admin -c "bash $*"; fi
+}
 
 log "===== 平台 stop.sh begin ====="
 log "user=$(id -un) uid=$(id -u)"
 
-source /etc/profile 2>&1 | while read -r l; do log "profile: $l"; done || true
+source /etc/profile 2>/dev/null || true
 log "sourced /etc/profile"
 
 if [ -f "/home/admin/stop_before.sh" ]; then
     cd /home/admin
     chmod 777 stop_before.sh
     log "执行 stop_before.sh"
-    su -m admin -c ./stop_before.sh 2>&1 | tee -a "$BOOT_LOG"
+    exec_as_admin /home/admin/stop_before.sh 2>&1 | tee -a "$BOOT_LOG"
 fi
 
-# 停止是临终操作，不许失败：找不到真实脚本不视为错误，直接以未运行处理退出 0。
 REAL_STOP=/home/export/App/bin/stop.sh
 if [ -f "$REAL_STOP" ]; then
     log "委托到 $REAL_STOP"
     cd /home/export/App/bin/
-    chmod +x stop.sh
-    su -m admin -c ./stop.sh 2>&1 | tee -a "$BOOT_LOG"
+    chmod +x stop.sh 2>/dev/null || true
+    exec_as_admin /home/export/App/bin/stop.sh 2>&1 | tee -a "$BOOT_LOG"
     REAL_RC=${PIPESTATUS[0]}
     log "真实脚本返回码=${REAL_RC}"
 else
@@ -46,7 +49,7 @@ if [ -f "/home/admin/stop_after.sh" ]; then
     cd /home/admin
     chmod 777 stop_after.sh
     log "执行 stop_after.sh"
-    su -m admin -c ./stop_after.sh 2>&1 | tee -a "$BOOT_LOG"
+    exec_as_admin /home/admin/stop_after.sh 2>&1 | tee -a "$BOOT_LOG"
 fi
 log "===== 平台 stop.sh end ====="
 exit 0
