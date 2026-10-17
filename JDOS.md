@@ -56,7 +56,6 @@ ENTRYPOINT 固定不可改：
 /home/admin/tini -- sh -c "/usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"
 ```
 容器常驻（双 sleep 保活），服务由启停钩子管理，不是 docker stop 语义。Noah 堡垒机依赖容器内 sshd（ENTRYPOINT 启动）+ hufu（`start_container.sh` 从 `storage.jd.local` 拉脚本安装，幂等，每次容器拉起执行）。
-容器常驻（双 sleep 保活），服务由启停钩子管理，不是 docker stop 语义。Noah 堡垒机依赖容器内 sshd + hufu（start_container 的固定初始化已覆盖）。
 
 ## 持久化存储：NFS 共享存储
 
