@@ -9,15 +9,14 @@ if [ -f "/home/admin/stop_before.sh" ]; then
     su -m admin -c ./stop_before.sh
 fi
 
-# 停止是临终操作，不许失败：找不到 /export/App/bin/stop.sh（如首次部署尚未
-# 复制真实脚本，或服务从未启动）不视为错误，直接以未运行处理退出 0。
-# isobuilder 进程不存在时真实脚本自身也会优雅退出（pidof 空 → exit 0）。
-if [ -f "/export/App/bin/stop.sh" ]; then
-    cd /export/App/bin/
+# 停止是临终操作，不许失败：找不到 /home/export/App/bin/stop.sh 不视为错误，
+# 直接以未运行处理退出 0。进程不存在时真实脚本自身也会优雅退出（pidof 空 → exit 0）。
+if [ -f "/home/export/App/bin/stop.sh" ]; then
+    cd /home/export/App/bin/
     chmod +x stop.sh
     su -m admin -c ./stop.sh
 else
-    echo "[stop.sh] /export/App/bin/stop.sh 不存在，视为服务未运行"
+    echo "[stop.sh] /home/export/App/bin/stop.sh 不存在，视为服务未运行"
 fi
 
 MONITOR_SHELL=/export/Shell/pid_monitor/task.sh
