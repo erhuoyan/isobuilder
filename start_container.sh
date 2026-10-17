@@ -46,9 +46,8 @@ mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
 chown -R admin:admin /data /export/log/isobuilder
 
 # start_before/after 钩子由 /home/admin/start.sh 内部调用，此处不再重复执行。
-# /export/App/bin/ 的真实启停脚本需在部署前手动备好（复制路径见 JDOS.md
-# 「首次部署」）；缺失时容器启动失败（CrashLoopBackOff）即暴露该前提——
-# 失败必须可见，不静默兜底。
+# 真实启停脚本在镜像层 /home/export/App/bin/，由 start.sh/stop.sh 入口调用；
+# 缺失时容器启动失败（CrashLoopBackOff）即暴露该前提——失败必须可见，不静默兜底。
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ 【模板段】以下平台调度收尾，跨项目复制不用改（勿动）              ┃

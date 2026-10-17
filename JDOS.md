@@ -48,7 +48,7 @@ openEuler 22.03 + `xorriso syslinux syslinux-nonlinux isomd5sum openssh-server c
 | `start.sh` | 平台调度器入口：source profile + `start_before/after` 钩子 + `su -m admin -c /home/export/App/bin/start.sh`。**该目录无脚本即启动失败（CrashLoopBackOff）——失败必须可见** |
 | `stop.sh` | 平台调度器入口：`stop_before/after` 钩子 + `/home/export/App/bin/stop.sh`。**永远成功**：脚本缺失视为服务未运行，进程不在 `pidof` 亦优雅退出 0 |
 
-**首次部署必须动作**：把仓库 `bin/{start,stop}.sh` 复制到实例的 `/export/App/bin/`（平台挂载盘）并 `chmod +x`。之后修改 `/export/App/bin/*.sh`，控制台点停止/启动即生效，无需重打镜像。本地正本更新后同步覆盖即可。
+**首次部署必须动作**：把仓库 `bin/{start,stop}.sh` 复制到实例的 `/home/export/App/bin/` 并 `chmod +x`。之后修改该目录下脚本，控制台点停止/启动即生效，无需重打镜像。本地正本更新后同步覆盖即可。
 
 ENTRYPOINT 固定不可改：
 
