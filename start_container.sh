@@ -43,10 +43,6 @@ curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
          /export/log/isobuilder
-# 只有可写目录需要给 admin（服务以 admin 身份运行）：
-#   /data                   构建工作区 + SQLite（NFS 挂载点，常为 root 属主）
-#   /export/log/isobuilder  服务 stdout 日志
-# /opt/isobuilder 是只读执行路径（二进制/前端/模板），落地已 755，无需 chown。
 chown -R admin:admin /data /export/log/isobuilder
 
 # start_before/after 钩子由 /home/admin/start.sh 内部调用，此处不再重复执行。
