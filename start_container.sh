@@ -1,7 +1,7 @@
 #!/bin/bash
 # jdos 云翼资源区容器入口脚本（固定初始化 + 应用拉起）
 #
-# 平台约定：前 28 行为固定内容，原样复制，负责把行云部署公钥注入容器
+# 平台约定：前 34 行为固定内容，原样复制，负责把行云部署公钥注入容器
 # （否则控制台目录查看/启停/网络工具/进程查询全部报 Permission denied）。
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ 【模板段】平台固定初始化（网络探测→公钥注入→hufu），跨项目不用改  ┃
@@ -38,19 +38,27 @@ curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 ######以下内容是启动应用内容，根据实际情况填写######
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ 【工程段】应用专属：数据/日志目录。换项目改这段（/export 是 jdos  ┃
-# ┃ 本地盘；只有可写目录要给 admin——/opt/isobuilder 只读执行无需 chown）┃
+# ┃ 【工程段】应用专属：数据/日志目录。换项目改这段                    ┃
+# ┃ （/export 是 jdos 本地盘；只有可写目录要给 admin）                ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
          /export/log/isobuilder
 chown -R admin:admin /data /export/log/isobuilder
 
-# start_before/after 钩子由 /home/admin/start.sh 内部调用，此处不再重复执行。
-# 真实启停脚本在镜像层 /home/export/App/bin/，由 start.sh/stop.sh 入口调用；
-# 缺失时容器启动失败（CrashLoopBackOff）即暴露该前提——失败必须可见，不静默兜底。
+# 引导日志：容器每次拉起都追加，排查启动失败的第一证据源
+BOOT_LOG=/export/log/isobuilder/boot.log
+log() { echo "[$(date '+%F %T')] [start_container] $*" | tee -a "$BOOT_LOG"; }
 
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ 【模板段】以下平台调度收尾，跨项目复制不用改（勿动）              ┃
+log "===== 容器启动 begin ====="
+log "user=$(id -un) uid=$(id -u)"
+log "真实脚本是否存在: $([ -f /home/export/App/bin/start.sh ] && echo 是 || echo 否)"
+log "平台入口是否存在: $([ -f /home/admin/start.sh ] && echo 是 || echo 否)"
+log "admin 用户: $(id admin 2>&1 | head -c 120)"
+log "env DB_URL 设置: $([ -n "$ISOBUILDER_DB_URL" ] && echo 已注入 || echo 空)"
+log "env DATA_DIR=${ISOBUILDER_DATA_DIR:-/data(默认)}"
 
-# 平台约定：必须切 admin 用户启动应用
-su -m admin -c "bash /home/admin/start.sh"
+log "准备调用平台入口 /home/admin/start.sh"
+su -m admin -c "bash /home/admin/start.sh" 2>&1 | tee -a "$BOOT_LOG"
+SU_RC=${PIPESTATUS[0]}
+log "平台入口返回码=${SU_RC}"
+log "===== 容器启动 end（后续由 ENTRYPOINT sleep 保活）====="

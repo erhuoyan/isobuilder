@@ -16,13 +16,27 @@ export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
 # ***** USER CODE END *****
 
+BOOT_LOG=$LOG_DIR/boot.log
+log() { echo "[$(date '+%F %T')] [bin/start.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+
+log "===== 真实 start.sh begin ====="
+log "user=$(id -un) uid=$(id -u)"
+log "APP_HOME=$APP_HOME BIN=$BIN LOG_DIR=$LOG_DIR"
+log "ADDR=$ISOBUILDER_ADDR DATA_DIR=$ISOBUILDER_DATA_DIR"
+log "DB_URL 注入: $([ -n "$ISOBUILDER_DB_URL" ] && echo 是 || echo 否)"
+
+mkdir -p "$LOG_DIR" 2>&1 | while read -r l; do log "mkdir: $l"; done || log "mkdir $LOG_DIR 失败 rc=$?"
+
 PIDPROC=$(pidof "$BIN" || true)
 if [[ -z "$PIDPROC" ]]; then
-    # isobuilder 是前台服务，不自我 daemonize，故后台拉起（&）
-    echo "应用启动命令："
-    echo "$APP_HOME/$BIN >> $LOG_DIR/$BIN.log 2>&1 &"
+    log "进程不存在，执行启动"
+    log "命令: $APP_HOME/$BIN >> $LOG_DIR/$BIN.log 2>&1 &"
     cd "$APP_HOME" && "$APP_HOME/$BIN" >> "$LOG_DIR/$BIN.log" 2>&1 &
-    echo "started pid: $(pidof "$BIN")"
+    LAUNCH_RC=$?
+    sleep 2
+    log "nohup 段返回 rc=${LAUNCH_RC}，2s 后进程: $(pidof "$BIN" || echo 无)"
+    log "服务日志头部：$(head -3 "$LOG_DIR/$BIN.log" 2>/dev/null | tr '\n' '|')"
 else
-    echo "(pid:$PIDPROC) is running"
+    log "(pid:$PIDPROC) 已在运行，跳过"
 fi
+log "===== 真实 start.sh end ====="
