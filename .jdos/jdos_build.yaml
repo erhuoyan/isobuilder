@@ -1,8 +1,7 @@
 # isobuilder 应用镜像的 jdos 原生构建配置。
 #
-# 先决条件：基础镜像任务（.jdos/jdos_build_base.yaml）已构建出编译镜像，
-# 其 tag 同步到下方 build_args.BUILD_BASE 与 containerlize/app/Dockerfile 的 ARG 默认值。
-# 原生构建不改写 Dockerfile，build_args 真透传，多阶段 FROM 用 ARG 引用。
+# BUILD_BASE 不在 build_args 里传——唯一事实源是 containerlize/app/Dockerfile
+# 的 ARG 默认值。换编译基础镜像 tag 时只改那里。
 version: v1alpha
 
 architecture: x86
@@ -11,5 +10,3 @@ dockerfile_path: containerlize/app
 dockerfile_name: Dockerfile
 build_context: .
 build_target: runtime
-build_args:
-  BUILD_BASE: hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb
