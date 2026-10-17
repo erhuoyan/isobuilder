@@ -1,5 +1,5 @@
 #!/bin/bash
-# isobuilder 真实停止脚本（位于 /export/App/bin/stop.sh，运行时可改）。
+# isobuilder 真实停止脚本（位于镜像层 /home/export/App/bin/stop.sh，运行时可改）。
 #
 # 与参考范式（kill -9 直接强杀）的一处刻意偏离：先 SIGTERM 让后端优雅退出
 #   CancelAll（取消运行中构建，连带清理 xorriso 子进程）→ server.Shutdown(≤20s)

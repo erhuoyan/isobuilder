@@ -13,7 +13,7 @@ containerlize/
 ├── app/Dockerfile         三阶段应用镜像（web → api → runtime）
 └── standalone/Dockerfile  通用运行时镜像（docker compose / 手工 buildx / K8s，不进 jdos）
 start.sh / stop.sh / start_container.sh   jdos 宿管启停入口（随镜像烤入 /home/admin/）
-bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录；不进镜像，部署时手动复制到 /export/App/bin/）
+bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录；不进镜像，部署时手动复制到 /home/export/App/bin/）
 ```
 
 
@@ -45,8 +45,8 @@ openEuler 22.03 + `xorriso syslinux syslinux-nonlinux isomd5sum openssh-server c
 | 文件 | 职责 |
 |---|---|
 | `start_container.sh` | 前 28 行平台固定初始化（从 `mirrors.jdfin.local` 注入行云部署公钥，否则控制台目录/启停/网络全报 Permission denied）→ 数据目录赋权 → 切 admin 调用 `/home/admin/start.sh` |
-| `start.sh` | 平台调度器入口：source profile + `start_before/after` 钩子 + `su -m admin -c /export/App/bin/start.sh`。**该目录无脚本即启动失败（CrashLoopBackOff）——失败必须可见** |
-| `stop.sh` | 平台调度器入口：`stop_before/after` 钩子 + `/export/App/bin/stop.sh`。**永远成功**：脚本缺失视为服务未运行，进程不在 `pidof` 亦优雅退出 0 |
+| `start.sh` | 平台调度器入口：source profile + `start_before/after` 钩子 + `su -m admin -c /home/export/App/bin/start.sh`。**该目录无脚本即启动失败（CrashLoopBackOff）——失败必须可见** |
+| `stop.sh` | 平台调度器入口：`stop_before/after` 钩子 + `/home/export/App/bin/stop.sh`。**永远成功**：脚本缺失视为服务未运行，进程不在 `pidof` 亦优雅退出 0 |
 
 **首次部署必须动作**：把仓库 `bin/{start,stop}.sh` 复制到实例的 `/export/App/bin/`（平台挂载盘）并 `chmod +x`。之后修改 `/export/App/bin/*.sh`，控制台点停止/启动即生效，无需重打镜像。本地正本更新后同步覆盖即可。
 

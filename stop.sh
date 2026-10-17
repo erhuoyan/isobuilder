@@ -1,5 +1,5 @@
 #!/bin/bash
-# jdos 平台停止入口（照平台调度器范式）。真实停止脚本在 /export/App/bin/stop.sh。
+# jdos 平台停止入口（照平台调度器范式）。真实停止脚本在 /home/export/App/bin/stop.sh。
 
 source /etc/profile
 

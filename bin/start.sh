@@ -1,5 +1,5 @@
 #!/bin/bash
-# isobuilder 真实启动脚本（位于 /export/App/bin/start.sh，运行时可改：
+# isobuilder 真实启动脚本（位于镜像层 /home/export/App/bin/start.sh，运行时可改：
 # 改完在控制台点「停止/启动」即生效，无需重打镜像）。
 #
 # ***** USER CODE START（isobuilder 专属：APP_HOME/BIN/LOG_DIR/env。换项目改此段，到 END 为止）*****

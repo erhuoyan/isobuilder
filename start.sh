@@ -1,5 +1,5 @@
 #!/bin/bash
-# jdos 平台启动入口（照平台调度器范式）。真实启动脚本在 /export/App/bin/start.sh
+# jdos 平台启动入口（照平台调度器范式）。真实启动脚本在 /home/export/App/bin/start.sh
 # ——运行时可改，改完点「停止/启动」即生效，无需重打镜像。
 
 source /etc/profile
@@ -10,7 +10,7 @@ if [ -f "/home/admin/start_before.sh" ]; then
     su -m admin -c ./start_before.sh
 fi
 
-cd /export/App/bin/
+cd /home/export/App/bin/
 su -m admin -c ./start.sh
 
 MONITOR_SHELL=/export/Shell/pid_monitor/task.sh

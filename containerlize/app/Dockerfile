@@ -63,7 +63,7 @@ COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 # 启停脚本：
 #   根 start.sh/stop.sh/start_container.sh   平台入口，随镜像烤入 /home/admin/
 #   bin/{start,stop}.sh                       版本化正本（git 记录），不进镜像；
-#                                             部署时手动从仓库复制到 /export/App/bin/
+#                                             部署时手动从仓库复制到 /home/export/App/bin/
 COPY start.sh stop.sh start_container.sh /home/admin/
 RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
     chown admin:admin /home/admin/{start,stop,start_container}.sh
