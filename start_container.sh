@@ -30,7 +30,7 @@ while true;do
 done
 
 curl -sL  $docker_init_url | bash
-[[ -d /export/Logs ]] || { mkdir -p /export/Logs && chown admin:admin /export/Logs; }
+curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 
 ######以上内容都是初始化系统依赖脚本，原样复制即可#######
 ######以下内容是启动应用内容，根据实际情况填写######
