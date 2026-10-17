@@ -27,7 +27,7 @@ bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录�
 | ① 编译基础镜像 | `.jdos/jdos_build_base.yaml` | base_image | `builder` | FROM `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest` |
 | ② 应用镜像 | `.jdos/jdos_build.yaml` | app_image | `runtime` | `build_args.BUILD_BASE` 指向任务①产物 |
 
-先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `.jdos/jdos_build.yaml` 的 `BUILD_BASE` 改为该地址后跑②。
+先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `containerlize/app/Dockerfile` 第 16 行 `ARG BUILD_BASE=` 的值改为该地址后跑②。（jdos_build.yaml 不传 build_args，Dockerfile 默认值即唯一事实源。）
 
 当前编译镜像：`hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb`（制品名 = 控制台应用名，不带 `-base` 后缀）
 ## 资源区与镜像
