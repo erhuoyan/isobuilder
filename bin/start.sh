@@ -2,9 +2,7 @@
 # isobuilder 真实启动脚本（位于 /export/App/bin/start.sh，运行时可改：
 # 改完在控制台点「停止/启动」即生效，无需重打镜像）。
 #
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ 【工程段】isobuilder 专属：APP_HOME/BIN/LOG_DIR/env。换项目改此段 ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+# ***** USER CODE START（isobuilder 专属：APP_HOME/BIN/LOG_DIR/env。换项目改此段，到 END 为止）*****
 
 # 应用主目录与可执行文件（二进制烤在镜像里，不能放 /export——拉起时被挂载覆盖）
 APP_HOME=/opt/isobuilder
@@ -16,9 +14,7 @@ export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/data}"
 export ISOBUILDER_WEB_DIR="${ISOBUILDER_WEB_DIR:-$APP_HOME/web}"
 export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
-# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-# ┃ 【模板段】以下启动逻辑通用（pidof 幂等 + nohup 后台拉起），勿动。   ┃
-# ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+# ***** USER CODE END *****
 
 PIDPROC=$(pidof "$BIN" || true)
 if [[ -z "$PIDPROC" ]]; then
