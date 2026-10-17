@@ -10,23 +10,30 @@
 BIN=isobuilder
 # ***** USER CODE END *****
 
+LOG_DIR=/export/log/isobuilder
+BOOT_LOG=$LOG_DIR/boot.log
+log() { echo "[$(date '+%F %T')] [bin/stop.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+
+log "===== 真实 stop.sh begin ====="
+log "user=$(id -un) uid=$(id -u) BIN=$BIN"
+
 if ! PIDPROC=$(pidof "$BIN"); then
-  echo "$BIN is not running"
+  log "$BIN 未在运行，无需停止"
   exit 0
 fi
 
-echo "PIDPROC: $PIDPROC"
-echo "sending SIGTERM ..."
+log "PIDPROC: $PIDPROC，发送 SIGTERM"
 kill $PIDPROC
+log "SIGTERM 已发，等优雅退出（最长 25s）"
 
-# 最多等 25s 优雅退出（后端 Shutdown 20s + Wait 余量）
 for ((i = 0; i < 25; i++)); do
   pidof "$BIN" > /dev/null || break
   sleep 1
 done
 
 if pidof "$BIN" > /dev/null; then
-  echo "still alive after 25s, force kill"
+  log "25s 后仍存活，SIGKILL 强杀: $(pidof "$BIN")"
   kill -9 $(pidof "$BIN")
 fi
-echo "stop finished at $(date)"
+log "停止完成 at $(date)"
+log "===== 真实 stop.sh end ====="
