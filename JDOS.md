@@ -29,7 +29,7 @@ bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录�
 
 先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `containerlize/app/Dockerfile` 第 16 行 `ARG BUILD_BASE=` 的值改为该地址后跑②。（jdos_build.yaml 不传 build_args，Dockerfile 默认值即唯一事实源。）
 
-当前编译镜像：`hub.is.jd.com/technical-service/yhpoc-ui:v20261016.232248-fb7b51ba-h27bdb`（制品名 = 控制台应用名，不带 `-base` 后缀）
+当前编译镜像：`hub.is.jd.com/technical-service/isobuilder:v20261017.111201-6d203eb8-r55mjk`（应用名已改为 isobuilder）
 ## 资源区与镜像
 
 统一使用 `hub.is.jd.com` 仓库地址（实测办公网/部署机/本机均可解析；jdos 构建机实际拉取推送也走此入口，digest 与 harbor-pro 的同源镜像一致）。内网仓库自签名证书：本地构建需在 docker daemon 配置 `"insecure-registries": ["hub.is.jd.com", ...]`。
