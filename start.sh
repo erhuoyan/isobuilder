@@ -9,6 +9,12 @@ if [ -f "/home/admin/start_before.sh" ]; then
     chmod 777 start_before.sh
     su -m admin -c ./start_before.sh
 fi
+# 启动前必须确认真实脚本存在；缺失则打日志告警并退出非零（启动失败要可见）。
+REAL_START=/home/export/App/bin/start.sh
+if [ ! -f "$REAL_START" ]; then
+    echo "[start.sh] ERROR: $REAL_START 不存在，请先从仓库 bin/start.sh 复制到 /home/export/App/bin/ 并 chmod +x"
+    exit 1
+fi
 
 cd /home/export/App/bin/
 su -m admin -c ./start.sh
