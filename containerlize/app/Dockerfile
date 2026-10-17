@@ -13,8 +13,10 @@
 #        /opt/isobuilder/isobuilder
 
 # ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
-ARG BUILD_BASE=hub.is.jd.com/technical-service/isobuilder:v20261017.111201-6d203eb8-r55mjk
-FROM ${BUILD_BASE} AS web
+# 编译镜像 tag 直接写死（jdos 的 checkDockerfile 不展开 ARG/build_args 变量，
+# 用 ${BUILD_BASE} 会报 imageURLnot match / base name blank）。
+# 换 tag：改这里 + Stage 2 的 FROM，两处同一个值。
+FROM hub.is.jd.com/technical-service/isobuilder:v20261017.111201-6d203eb8-r55mjk AS web
 WORKDIR /src
 # 先拷包清单 + .npmrc 装依赖（依赖未变时复用层缓存；build_context=. → COPY 相对仓库根）
 # .npmrc 必须与包清单同批到位：它指定 registry=https://registry.npmmirror.com/，
@@ -27,10 +29,7 @@ COPY frontend/ ./frontend/
 RUN cd frontend && pnpm build
 
 # ── Stage 2: 后端（编译基础镜像里的 Go，CGO 关闭纯静态编译）────────────────────
-# ARG 在此重新声明：首个全局 ARG 的跨阶段求值在旧 buildkit 上不保证，显式声明让
-# ${BUILD_BASE} 在本阶段确定可用（值继承自首个 ARG / build_args）。
-ARG BUILD_BASE
-FROM ${BUILD_BASE} AS api
+FROM hub.is.jd.com/technical-service/isobuilder:v20261017.111201-6d203eb8-r55mjk AS api
 ARG GOPROXY=http://artifactory.jd.com/api/go/go_virtual
 ENV GOPROXY=${GOPROXY} GOSUMDB=off GOTOOLCHAIN=local
 WORKDIR /src/backend

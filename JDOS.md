@@ -25,9 +25,9 @@ bin/start.sh / bin/stop.sh                真实启停脚本正本（git 记录�
 | 任务 | 配置 | 制品类型 | target | 说明 |
 |---|---|---|---|---|
 | ① 编译基础镜像 | `.jdos/jdos_build_base.yaml` | base_image | `builder` | FROM `jdt-jdos-base/jdt-base-os-openeuler22.03lts:latest` |
-| ② 应用镜像 | `.jdos/jdos_build.yaml` | app_image | `runtime` | Dockerfile `ARG BUILD_BASE` 指向任务①产物（yaml 不传 build_args） |
+| ② 应用镜像 | `.jdos/jdos_build.yaml` | app_image | `runtime` | Dockerfile 里两个编译 FROM 写死任务①产物 tag |
 
-先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `containerlize/app/Dockerfile` 第 16 行 `ARG BUILD_BASE=` 的值改为该地址后跑②。（jdos_build.yaml 不传 build_args，Dockerfile 默认值即唯一事实源。）
+先跑①，产物在「制品管理 → 基础镜像」，记下仓库地址；把 `containerlize/app/Dockerfile` **两处编译 FROM**（Stage 1 `AS web` 与 Stage 2 `AS api`）的镜像地址改为该 tag。（jdos 的 checkDockerfile 不展开 ARG/build_args 变量，FROM 必须写死实体镜像名；LRuntime 基底 jdt openEuler 不变。）
 
 当前编译镜像：`hub.is.jd.com/technical-service/isobuilder:v20261017.111201-6d203eb8-r55mjk`（应用名已改为 isobuilder）
 ## 资源区与镜像
