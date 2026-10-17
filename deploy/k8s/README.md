@@ -10,7 +10,7 @@
                                    │
                     ┌──────────────▼───────────────┐
                     │ Deployment isobuilder (×1)   │
-                    │  ISOBUILDER_DB_URL ───────────────→ 云 RDS PostgreSQL
+                    │  -c /etc/isobuilder/config.yaml ──→ 云 RDS PostgreSQL
                     │  /data ← PVC isobuilder-data │
                     └──────────────┬───────────────┘
                                    │  RWX
@@ -164,15 +164,18 @@ GitHub Secrets 本身加密存储，轮换密码只需更新 Secret，不动代�
 
 ## 6. 数据库：PostgreSQL 与 SQLite 的切换
 
-应用启动时按 `ISOBUILDER_DB_URL` 决定后端：
+应用按 **`-c` 指定的配置文件** 或环境变量决定连接：
 
 | 情况 | 行为 |
 |---|---|
-| `ISOBUILDER_DB_URL` 非空 | 连 PostgreSQL（本部署形态） |
-| 未设置 | 退回容器内 SQLite（`$ISOBUILDER_DATA_DIR/isobuilder.db`） |
+| `-c` 文件里 `database_url` 非空 | 连 PostgreSQL（本部署形态） |
+| 未传 `-c`，`ISOBUILDER_DB_URL` 非空 | 连 PostgreSQL |
+| 两者都空 | 退回容器内 SQLite（`$ISOBUILDER_DATA_DIR/isobuilder.db`） |
 
-所以裸机 / 单容器部署（`docker-compose.yml`、`deploy/install.sh`）**零改动**继续能用 SQLite；
-K8s 里通过 Secret 注入 PG 连接串。
+K8s 里 DSN 放 Secret 的 `config.yaml` 键，挂载成 `/etc/isobuilder/config.yaml`，
+Deployment 用 `args: [-c, /etc/isobuilder/config.yaml]` 指定（见 `deployment.yaml`）。
+文件缺失或解析失败会直接退出，不会静默回退 SQLite——避免"改完没生效却看着正常"。
+裸机 / 单容器部署（`docker-compose.yml`、`deploy/install.sh`）不传 `-c`，零改动继续用 SQLite。
 
 从旧 SQLite 迁到 PG 时，需要把 6 张表的数据导出再灌入 RDS（应用不会自动迁移存量数据）。
 

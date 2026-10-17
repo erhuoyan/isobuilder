@@ -64,6 +64,10 @@ COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 #   根 start.sh/stop.sh/start_container.sh   平台入口，随镜像烤入 /home/admin/
 #   bin/{start,stop}.sh                       版本化正本（git 记录），不进镜像；
 #                                             部署时手动从仓库复制到 /home/export/App/bin/
+#
+# 数据库连接串：把 config.yaml（仅 database_url 一键）放到
+#   /home/export/App/cfg/config.yaml，bin/start.sh 检测到即自动加 -c；
+#   也可用 ISOBUILDER_CONFIG 指向别处。文件不存在则走环境变量。
 COPY start.sh stop.sh start_container.sh /home/admin/
 RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
     chown admin:admin /home/admin/{start,stop,start_container}.sh

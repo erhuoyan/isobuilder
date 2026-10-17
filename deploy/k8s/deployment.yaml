@@ -37,6 +37,11 @@ spec:
           # 升级：kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
           image: hub-pub.jdcloud.com/iaas-jf/isobuilder:0.1.13-f90d994-20261016-005932
           imagePullPolicy: IfNotPresent
+          # 数据库连接串走 -c 指定的配置文件（Secret 挂载），
+          # 避免含特殊字符的 DSN 经环境变量转义；文件缺失时进程直接退出、报错可见。
+          args:
+            - -c
+            - /etc/isobuilder/config.yaml
           ports:
             - name: http
               containerPort: 8080
@@ -45,13 +50,6 @@ spec:
               value: ":8080"
             - name: ISOBUILDER_DATA_DIR
               value: /data
-            # PostgreSQL：数据库在云 RDS 上，Pod 无状态，仅 /data 走 PV。
-            # 留空则退回容器内 SQLite（单文件在 /data，不推荐用于多环境下重放）。
-            - name: ISOBUILDER_DB_URL
-              valueFrom:
-                secretKeyRef:
-                  name: isobuilder-db
-                  key: url
             # 可选：设置后 API 需要 Authorization: Bearer <token>。
             - name: ISOBUILDER_AUTH_TOKEN
               valueFrom:
@@ -65,6 +63,10 @@ spec:
           volumeMounts:
             - name: nfs
               mountPath: /data
+            # 数据库配置文件（仅 database_url）来自 Secret，只读挂载。
+            - name: db-config
+              mountPath: /etc/isobuilder
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /api/health
@@ -101,3 +103,10 @@ spec:
         - name: nfs
           persistentVolumeClaim:
             claimName: isobuilder-data
+        # 数据库连接串：Secret 的 config.yaml 键挂载成 /etc/isobuilder/config.yaml。
+        - name: db-config
+          secret:
+            secretName: isobuilder-db
+            items:
+              - key: config.yaml
+                path: config.yaml

@@ -1,0 +1,22 @@
+# isobuilder 配置文件示例（用 -c 指定）
+#
+#   isobuilder -c /path/to/config.yaml
+#
+# JDOS 部署：放到 /home/export/App/cfg/config.yaml，bin/start.sh 检测到即自动加 -c。
+# K8s 部署：见 deploy/k8s/secret.example.yaml（Secret 挂载 + args: [-c, ...]）。
+#
+# 这里只有一个键。对象存储、鉴权等其余配置在 Web「系统配置」页维护、存于数据库，
+# 或在环境变量里给（本文件优先级更高）。之所以要有这个文件，是因为"连哪个库"
+# 必须在打开数据库之前就知道，是数据库自身无法提供的鸡生蛋信息。
+#
+# 密码含 @ : / ? # 等特殊字符时，用 URL 形式要把它们百分号编码（如 @ → %40），
+# 或干脆用 key=value 形式（无需转义）。
+
+# URL 形式：
+database_url: postgres://user:pass@host:5432/isobuilder?sslmode=prefer
+
+# key=value 形式（二选一）：
+# database_url: host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer
+
+# 留空或不写这个键 = 使用容器内 SQLite（$ISOBUILDER_DATA_DIR/isobuilder.db）。
+# database_url: ""

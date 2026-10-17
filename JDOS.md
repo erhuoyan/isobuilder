@@ -71,7 +71,12 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 
 - 服务端口 `8080`，jdos 实例按平台规则配置端口映射/访问
 - 环境变量同根 `README.md` 配置表；`ISOBUILDER_DATA_DIR` 默认 `/data`（NFS 挂载点）
-- 密钥（`ISOBUILDER_AUTH_TOKEN`、`ISOBUILDER_DB_URL` 等）走 jdos 配置管理注入，不进镜像
+- **数据库推荐走配置文件**：把 `config.yaml` 放到 `/home/export/App/cfg/config.yaml`，
+  `bin/start.sh` 检测到即自动加 `-c`，无需任何环境变量注入。文件只放一个键
+  `database_url: postgres://...`（含 `@` 等特殊字符时比环境变量省心）。
+  路径也可用 `ISOBUILDER_CONFIG` 覆盖。文件缺失/解析失败会直接退出，不静默回退 SQLite。
+- 密钥（`ISOBUILDER_AUTH_TOKEN` 等）仍走 jdos 配置管理注入，不进镜像；对象存储配置
+  在 Web「系统配置」页维护、存于数据库。
 
 ## 本地调试
 

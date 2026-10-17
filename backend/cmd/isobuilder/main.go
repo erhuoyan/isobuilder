@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,10 +23,13 @@ import (
 )
 
 func main() {
+	configPath := flag.String("c", "", "YAML 配置文件路径（可设 database_url，覆盖环境变量）")
+	flag.Parse()
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		logger.Error("加载配置失败", "err", err)
 		os.Exit(1)
@@ -75,6 +79,7 @@ func main() {
 
 	logger.Info("isobuilder 启动",
 		"addr", cfg.Addr,
+		"config_file", *configPath,
 		"data_dir", cfg.DataDir,
 		"storage", blob.Kind(),
 		"bucket", blob.Bucket(),

@@ -23,7 +23,7 @@ func newTestManager(t *testing.T) (*Manager, *store.Store) {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("ISOBUILDER_DATA_DIR", root)
-	cfg, err := config.Load()
+	cfg, err := config.Load("")
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

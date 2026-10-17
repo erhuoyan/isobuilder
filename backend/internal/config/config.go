@@ -1,4 +1,8 @@
-// Package config loads isobuilder runtime configuration from environment variables.
+// Package config loads isobuilder runtime configuration from environment
+// variables, optionally overridden by a small YAML file selected with -c that
+// exists for exactly one chicken-and-egg key: database_url. Everything else
+// the operator tunes (object storage, auth) already lives in the database
+// settings the UI edits, or in the environment.
 package config
 
 import (
@@ -9,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Config is the fully resolved runtime configuration.
@@ -56,8 +62,24 @@ type StorageConfig struct {
 // Enabled reports whether object storage is configured.
 func (s StorageConfig) Enabled() bool { return s.Bucket != "" }
 
-// Load reads configuration from the environment, applying defaults relative to DataDir.
-func Load() (Config, error) {
+// Load resolves runtime configuration. configPath is the YAML file named with
+// -c; "" means environment variables only. The file may set a single key,
+// database_url, which wins over ISOBUILDER_DB_URL. A missing or unreadable
+// file is an error, never a silent fallback.
+func Load(configPath string) (Config, error) {
+	var fileDB string
+	if configPath != "" {
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			return Config{}, fmt.Errorf("read config file: %w", err)
+		}
+		var fc minimalConfig
+		if err := yaml.Unmarshal(data, &fc); err != nil {
+			return Config{}, fmt.Errorf("parse config file %s: %w", configPath, err)
+		}
+		fileDB = strings.TrimSpace(fc.DatabaseURL)
+	}
+
 	dataDir := env("ISOBUILDER_DATA_DIR", "/data")
 	if !filepath.IsAbs(dataDir) {
 		abs, err := filepath.Abs(dataDir)
@@ -81,7 +103,7 @@ func Load() (Config, error) {
 		BuildDir:    filepath.Join(dataDir, "builds"),
 		KickDir:     filepath.Join(dataDir, "kickstarts"),
 		ArtifactDir: filepath.Join(dataDir, "artifacts"),
-		DatabaseURL: strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL")),
+		DatabaseURL: firstNonEmpty(fileDB, strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL"))),
 		DBPath:      filepath.Join(dataDir, "isobuilder.db"),
 
 		MaxUploadBytes:      envBytes("ISOBUILDER_MAX_UPLOAD_BYTES", 40<<30),
@@ -125,6 +147,21 @@ func Load() (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// minimalConfig is the full YAML schema: exactly one key. It exists because
+// the database address must be known before the database can be opened.
+type minimalConfig struct {
+	DatabaseURL string `yaml:"database_url"`
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func env(key, def string) string {

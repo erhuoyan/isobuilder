@@ -8,6 +8,10 @@
 #   ./deploy/build-image.sh 0.1.0
 #   REGISTRY=registry.example.com/team ./deploy/build-image.sh 0.1.0 --push
 #
+# 数据库连接串可用配置文件（-c）指定，避免含特殊字符的 DSN 经环境变量：
+#   docker run -v /host/config.yaml:/etc/isobuilder/config.yaml \
+#     isobuilder:0.1.0 -c /etc/isobuilder/config.yaml
+#
 # 手工等价步骤:
 #   (cd frontend && pnpm build)
 #   (cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
