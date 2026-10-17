@@ -8,7 +8,7 @@
 # ***** USER CODE START（唯一工程项：BIN 改成你的二进制名，到 END 为止）*****
 # 进程名，改这里
 BIN=isobuilder
-
+# ***** USER CODE END *****
 
 if ! PIDPROC=$(pidof "$BIN"); then
   echo "$BIN is not running"
