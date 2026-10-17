@@ -78,7 +78,7 @@ isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、
 ```bash
 # ① 基础镜像（需内网对象存储可达）
 docker build -t isobuilder-build-base:local -f containerlize/base/Dockerfile .
-# 拉取 jdos 产物做编译镜像：docker pull hub.is.jd.com/technical-service/yhpoc-ui:<tag>
+# 拉取 jdos 产物做编译镜像：docker pull hub.is.jd.com/technical-service/isobuilder:<tag>
 
 # ② 应用镜像
 docker build --build-arg BUILD_BASE=isobuilder-build-base:local \
