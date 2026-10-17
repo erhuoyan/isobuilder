@@ -10,9 +10,10 @@
 BIN=isobuilder
 # ***** USER CODE END *****
 
+# 自己的诊断行写 app-stop.log（boot.log 由链首 stop.sh 捕获写入）。
 LOG_DIR=/export/log/isobuilder
-BOOT_LOG=$LOG_DIR/boot.log
-log() { echo "[$(date '+%F %T')] [bin/stop.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+OWN_LOG=$LOG_DIR/app-stop.log
+log() { echo "[$(date '+%F %T')] [bin/stop.sh] $*" | tee -a "$OWN_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [bin/stop.sh] $*"; }
 
 log "===== 真实 stop.sh begin ====="
 log "user=$(id -un) uid=$(id -u) BIN=$BIN"

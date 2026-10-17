@@ -16,8 +16,10 @@ export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
 # ***** USER CODE END *****
 
-BOOT_LOG=$LOG_DIR/boot.log
-log() { echo "[$(date '+%F %T')] [bin/start.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || true; }
+# 自己的诊断行写 app-start.log（boot.log 由链首聚合，start.log 由上层 start.sh 写——
+# 各写各的文件，互不重复；stdout 继续向上流进 boot.log）。
+OWN_LOG=$LOG_DIR/app-start.log
+log() { echo "[$(date '+%F %T')] [bin/start.sh] $*" | tee -a "$OWN_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [bin/start.sh] $*"; }
 
 log "===== 真实 start.sh begin ====="
 log "user=$(id -un) uid=$(id -u)"
