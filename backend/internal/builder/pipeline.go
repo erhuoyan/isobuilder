@@ -343,6 +343,7 @@ func payloadScript(scan bool) string {
 	const header = `# 卷标必须是 ISO_PAYLOAD（11 字符）：FAT32/exFAT 的卷标字段固定 11 字节，
 # 更长的名字在 Windows/macOS 格式化工具里会被截断或拒绝，blkid -L 就匹配不到。
 # 这也是它不能叫 ISOBUILDER_PAYLOAD（18 字符）的原因。
+# 文件系统：FAT32 单文件 ≤4 GiB（兼容性最好），更大的文件请用 exFAT。
 PAYLOAD_LABEL="ISO_PAYLOAD"
 PAYLOAD_DIR="payload"
 PAYLOAD_DEST="/mnt/sysimage/opt/payload"

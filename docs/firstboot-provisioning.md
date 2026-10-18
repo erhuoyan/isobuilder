@@ -210,8 +210,10 @@ U 盘侧约定（配合 Ventoy）：
 
 1. 用 Ventoy 的**保留空间**建一个独立分区（**不能**用放 ISO 的那个分区）
 2. 分区卷标设为 `ISO_PAYLOAD`（11 字符，FAT32/exFAT 卷标上限）
-3. 分区内建 `payload/` 目录
-4. 文件最终出现在新系统的 `/opt/payload`
+3. 分区文件系统：payload 单文件都 ≤4 GiB 用 FAT32（兼容性最好）；
+   有更大的文件则用 exFAT（注入脚本已 `modprobe exfat`）
+4. 分区内建 `payload/` 目录
+5. 文件最终出现在新系统的 `/opt/payload`
 
 
 ---

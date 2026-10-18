@@ -291,6 +291,16 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
 约定：U 盘上需有一个**独立分区**（Ventoy 用其「保留空间」创建），卷标设为 `ISO_PAYLOAD`
 （**恰好 11 字符**——FAT32/exFAT 的卷标字段固定 11 字节，更长会被格式化工具截断或拒绝），
 内含 `payload/` 目录；文件最终落到新系统的 `/opt/payload`。
+
+分区文件系统按 payload 内容选：
+
+| 文件系统 | 单文件上限 | 说明 |
+|---|---|---|
+| FAT32 | **4 GiB** | 安装内核原生 `vfat` 支持，兼容性最好；payload 若是脚本/rpm/配置等小文件，选它 |
+| exFAT | 无实际限制 | payload 含 **>4 GiB 的单文件**时必须用它。安装器需 `exfat` 模块，注入脚本已 `modprobe exfat` 预热（Rocky 9 5.14+ 原生、openEuler 22.03 backport 均有） |
+
+exFAT 没有 POSIX 权限位，拷进新系统后文件属主是 root、权限为默认值——若装机后脚本要求特定权限，
+在脚本里自己 `chmod`。超过 4 GiB 又不便用 exFAT 时，可把大文件拆分或改用内网 HTTP 拉取。
 **注意**：Ventoy 自身的数据分区启动后无法挂载（[ventoy/Ventoy#667](https://github.com/ventoy/Ventoy/issues/667)），
 因此不能把文件放在放 ISO 的那个分区里。
 
