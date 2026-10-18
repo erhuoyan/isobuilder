@@ -89,11 +89,10 @@ EXPOSE 8080
 
 # jdos 约定 ENTRYPOINT（双 sleep 保活；容器常驻，服务由启停钩子管理）
 #
-# 开头的 mkdir 必须在 ENTRYPOINT 里、而不是构建期：/export 会被行云发布
-# 挂载覆盖，构建期建的目录会消失。平台的启停流程（以非 root 用户 dev 运行）
-# 会执行 `mkdir /export/Logs`，若 /export 不存在或不可写就会 Permission denied，
-# 导致实例停止失败并进入 Failed 状态。
-#
-# chown + chmod 双保险：chown 对齐平台约定（admin:admin），chmod 0777 兜住
-# dev 这类非 admin 组用户。/export 在容器内只是平台的日志暂存区，不涉及宿主。
-ENTRYPOINT /home/admin/tini -- sh -c "mkdir -p /export/Logs /export/Data && chown -R admin:admin /export && chmod -R 0777 /export && /usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"
+# 开头的 mkdir 必须在 ENTRYPOINT 里、而不是构建期：/export 在行云发布后会被
+# 挂载覆盖，构建期建的目录不会保留。平台的启停流程随后会执行
+# `mkdir /export/Logs`；若该目录不存在且 /export 不可写，就报 Permission denied，
+# 实例停止失败并进入 Failed 状态。
+# ENTRYPOINT 以 root 运行，mkdir 与 chown 必然成功；chown admin:admin 与平台
+# 示例一致，保证 admin 身份（及 admin 组成员）后续可写。
+ENTRYPOINT /home/admin/tini -- sh -c "mkdir -p /export/Logs /export/Data && chown -R admin:admin /export && /usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"

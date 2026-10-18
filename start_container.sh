@@ -70,12 +70,10 @@ mkdir -p "$DATA_DIR"/builds "$DATA_DIR"/isos "$DATA_DIR"/work \
          "$LOG_DIR"
 chown -R admin:admin "$DATA_DIR" "$LOG_DIR" 2>/dev/null || true
 
-# 平台自身的启停流程会以非 root 用户（dev）mkdir /export/Logs。本脚本以 root
-# 运行，若 /export 由这里首次创建就会是 root:root 0755，平台随后 mkdir 会
-# Permission denied，导致实例停止失败。放开 /export 的写权限即可（容器内
-# 该目录只是平台的日志暂存区，不涉及宿主机）。
-chmod 0777 /export 2>/dev/null || true
-[ -d /export/Logs ] && chmod 0777 /export/Logs 2>/dev/null || true
+# 平台启停流程会 mkdir /export/Logs。该目录由 ENTRYPOINT 以 root 创建并
+# chown 给 admin；这里只兜底补齐属主（镜像未及时更新时也能自愈），
+# 不再改权限位——与平台示例保持一致。
+[ -d /export ] && chown -R admin:admin /export 2>/dev/null || true
 
 # 引导日志：预创建 + chown（root tee -a 建的文件属主是 root，admin 写不进就丢日志）
 BOOT_LOG=$LOG_DIR/boot.log
