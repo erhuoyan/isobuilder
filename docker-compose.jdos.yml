@@ -20,14 +20,14 @@
 #     docker compose -f docker-compose.jdos.yml up -d
 services:
   isobuilder:
-    image: ${IMAGE:-hub.is.jd.com/technical-service/isobuilder:v20261017.174220-bb119621-kegm91}
-    # JDOS 制品是 linux/amd64；Apple Silicon 靠 Rosetta 直接跑。
-    platform: linux/amd64
+    # 默认用本仓库当前代码构建的镜像（deploy/build-image.sh），而不是 JDOS 上那个旧 tag——
+    # 旧制品不含 MySQL 方言，连 mysql:// 会回退到 PostgreSQL 解析并失败。
+    image: ${IMAGE:-isobuilder:0.0.0-local-202610181734}
     container_name: isobuilder-jdos
     restart: unless-stopped
-    # 覆盖镜像 ENTRYPOINT（tini → 二进制），跳过 jdos 平台入口脚本。
-    entrypoint: ["/home/admin/tini", "--"]
-    command: ["/opt/isobuilder/isobuilder", "-c", "/home/export/App/cfg/config.yaml"]
+    # 本地镜像的 ENTRYPOINT 已是二进制本身；显式声明便于与 JDOS 制品共用同一份 compose。
+    entrypoint: ["/opt/isobuilder/isobuilder"]
+    command: ["-c", "/home/export/App/cfg/config.yaml"]
     ports:
       - "${PORT:-8080}:8080"
     environment:

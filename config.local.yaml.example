@@ -6,17 +6,18 @@
 # 优先级：本文件 > 环境变量 > 默认值。只写需要改的键即可。
 # 完整键列表见 deploy/config.example.yaml。
 
-# 监听端口（改这里就不用动 compose 的 environment）
 addr: ":8080"
 
 # isos/uploads/work/builds/kickstarts/artifacts 都从 data_dir 派生，无需单独配置
 data_dir: /opt/isobuilder/data
 log_dir: /export/log/isobuilder
 
-# key=value 形式（推荐）：走 RDS 外网地址，容器内也可达
-database_url: 'host=pg-internet-north1-3df622c70ad543a6.rds.jdcloud.com port=5432 user=gengyan15 password=CentOS@2026 dbname=isobuilder sslmode=prefer'
+# MySQL（JD 云 RDS）。密码里的 @ 在 URL 形式中要写成 %40。
+database_url: 'mysql://isobuilder:REPLACE_PASSWORD@mysql-internet-cn-north-1-415a1725ad4e4162.rds.jdcloud.com:3306/isobuilder'
 
-# URL 形式（二选一，密码里的 @ 需写成 %40）：
-# database_url: 'postgres://gengyan15:CentOS%402026@pg-internet-north1-3df622c70ad543a6.rds.jdcloud.com:5432/isobuilder?sslmode=prefer'
+# PostgreSQL（URL 形式）：
+# database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+# PostgreSQL（key=value 形式，密码含 @ 无需转义）：
+# database_url: 'host=204.1.2.3 port=5432 user=isobuilder password=secret dbname=isobuilder sslmode=prefer'
 
-# 想用本机 SQLite（不连外部库）就把 database_url 整行注释掉。
+# 想用 SQLite（不连外部库）就把 database_url 整行注释掉。
