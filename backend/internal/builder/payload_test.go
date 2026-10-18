@@ -20,10 +20,15 @@ func TestRenderPayloadSnippet(t *testing.T) {
 	}
 
 	label := renderPayloadSnippet("label")
-	for _, want := range []string{"ISOBUILDER_PAYLOAD", "mount -o ro", "payload_try", "/mnt/sysimage/opt/payload"} {
+	for _, want := range []string{`PAYLOAD_LABEL="ISO_PAYLOAD"`, "mount -o ro", "payload_try", "/mnt/sysimage/opt/payload"} {
 		if !strings.Contains(label, want) {
 			t.Fatalf("label 模式缺少 %q", want)
 		}
+	}
+	// FAT32/exFAT 的卷标字段固定 11 字节：超过就会被格式化工具截断或拒绝，
+	// blkid -L 永远匹配不到，payload 静默不拷。这里锁死上限防回归。
+	if n := len("ISO_PAYLOAD"); n > 11 {
+		t.Fatalf("卷标 %q 有 %d 字节，超过 FAT32/exFAT 的 11 字节上限", "ISO_PAYLOAD", n)
 	}
 	// 挂载前必须预热文件系统模块：安装器 initrd 未必已加载 exfat/vfat，
 	// 没有 modprobe 的话 exFAT/FAT32 分区会静默挂载失败（payload 看似没拷上）。

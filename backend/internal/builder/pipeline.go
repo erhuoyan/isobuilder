@@ -323,7 +323,7 @@ func renderPostScript(script string) string {
 // Payload must live on a *separate* USB partition: Ventoy's own data partition
 // cannot be mounted after boot (ventoy/Ventoy#667), so the recommended setup is
 // a dedicated partition carved from Ventoy's reserved space, labelled
-// ISOBUILDER_PAYLOAD with a `payload/` directory inside.
+// ISO_PAYLOAD with a `payload/` directory inside.
 //
 // Everything is best-effort by design: no partition, an unmountable filesystem
 // or a failed copy must never fail the installation. The whole feature is
@@ -340,7 +340,10 @@ func renderPayloadSnippet(mode string) string {
 }
 
 func payloadScript(scan bool) string {
-	const header = `PAYLOAD_LABEL="ISOBUILDER_PAYLOAD"
+	const header = `# 卷标必须是 ISO_PAYLOAD（11 字符）：FAT32/exFAT 的卷标字段固定 11 字节，
+# 更长的名字在 Windows/macOS 格式化工具里会被截断或拒绝，blkid -L 就匹配不到。
+# 这也是它不能叫 ISOBUILDER_PAYLOAD（18 字符）的原因。
+PAYLOAD_LABEL="ISO_PAYLOAD"
 PAYLOAD_DIR="payload"
 PAYLOAD_DEST="/mnt/sysimage/opt/payload"
 PAYLOAD_MP=/tmp/isobuilder-usb

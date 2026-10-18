@@ -283,10 +283,11 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
 模板已有的 `%post --nochroot` 段内（只有该阶段还能看到安装介质）。
 
 - `off` —— 不注入任何逻辑（默认）。
-- `label` —— 只按卷标 `ISOBUILDER_PAYLOAD` 查找 U 盘分区，找不到就跳过。
+- `label` —— 只按卷标 `ISO_PAYLOAD` 查找 U 盘分区，找不到就跳过。
 - `auto` —— 卷标优先；未命中时扫描非目标磁盘的分区，找含 `payload/` 目录的并挂载。
 
-约定：U 盘上需有一个**独立分区**（Ventoy 用其「保留空间」创建），卷标设为 `ISOBUILDER_PAYLOAD`，
+约定：U 盘上需有一个**独立分区**（Ventoy 用其「保留空间」创建），卷标设为 `ISO_PAYLOAD`
+（**恰好 11 字符**——FAT32/exFAT 的卷标字段固定 11 字节，更长会被格式化工具截断或拒绝），
 内含 `payload/` 目录；文件最终落到新系统的 `/opt/payload`。
 **注意**：Ventoy 自身的数据分区启动后无法挂载（[ventoy/Ventoy#667](https://github.com/ventoy/Ventoy/issues/667)），
 因此不能把文件放在放 ISO 的那个分区里。

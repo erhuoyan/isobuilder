@@ -203,13 +203,13 @@ systemctl start isobuilder-firstboot        # 修好后手动重跑
 | 模式 | 含义 |
 |---|---|
 | `off` | 不注入（默认） |
-| `label` | 首次启动时按卷标 `ISOBUILDER_PAYLOAD` 查找 U 盘分区 |
+| `label` | 首次启动时按卷标 `ISO_PAYLOAD` 查找 U 盘分区 |
 | `auto` | 首次启动时卷标优先，未命中则扫描非目标盘分区找 `payload/` |
 
 U 盘侧约定（配合 Ventoy）：
 
 1. 用 Ventoy 的**保留空间**建一个独立分区（**不能**用放 ISO 的那个分区）
-2. 分区卷标设为 `ISOBUILDER_PAYLOAD`
+2. 分区卷标设为 `ISO_PAYLOAD`（11 字符，FAT32/exFAT 卷标上限）
 3. 分区内建 `payload/` 目录
 4. 文件最终出现在新系统的 `/opt/payload`
 

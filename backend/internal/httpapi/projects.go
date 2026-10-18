@@ -294,7 +294,7 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 
 	// payload_mode: 可选的 U 盘文件注入。省略 = 不变。
 	//   off   —— 不注入（默认，模板里的占位符替换成一行注释）
-	//   label —— 只按卷标 ISOBUILDER_PAYLOAD 找分区
+	//   label —— 只按卷标 ISO_PAYLOAD 找分区（11 字符，FAT32/exFAT 上限）
 	//   auto  —— 卷标优先，未命中再扫描非目标盘
 	payloadMode := pick(req.PayloadMode, p.PayloadMode)
 	if payloadMode == "" {
