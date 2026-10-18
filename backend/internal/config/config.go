@@ -162,24 +162,23 @@ func Load(configPath string) (Config, error) {
 // fileConfig mirrors Config as YAML. Pointer fields tell "key absent in the
 // file" (nil, keep the environment/default) from "key explicitly set" — which
 // matters for booleans and numbers, where the zero value is meaningful.
+//
+// The per-directory paths (iso_dir, work_dir, …) are deliberately NOT here:
+// every one of them derives from data_dir, and exposing them invited
+// configurations that split isos and work across filesystems — which breaks
+// the artifact move (cross-device fallback to copy, needing 2× space).
 type fileConfig struct {
-	Addr                *string `yaml:"addr"`
-	DataDir             *string `yaml:"data_dir"`
-	AuthToken           *string `yaml:"auth_token"`
-	BuiltinDir          *string `yaml:"builtin_dir"`
-	WebDir              *string `yaml:"web_dir"`
-	DatabaseURL         *string `yaml:"database_url"`
-	IsoDir              *string `yaml:"iso_dir"`
-	UploadDir           *string `yaml:"upload_dir"`
-	WorkDir             *string `yaml:"work_dir"`
-	BuildDir            *string `yaml:"build_dir"`
-	KickDir             *string `yaml:"kick_dir"`
-	ArtifactDir         *string `yaml:"artifact_dir"`
-	MaxUploadBytes      *int64  `yaml:"max_upload_bytes"`
-	MaxConcurrentBuilds *int    `yaml:"max_concurrent_builds"`
-	KeepWorkDir         *bool   `yaml:"keep_work_dir"`
-	KeepLocalArtifact   *bool   `yaml:"keep_local_artifact"`
-	BuildTimeoutMinutes *int    `yaml:"build_timeout_minutes"`
+	Addr                *string            `yaml:"addr"`
+	DataDir             *string            `yaml:"data_dir"`
+	AuthToken           *string            `yaml:"auth_token"`
+	BuiltinDir          *string            `yaml:"builtin_dir"`
+	WebDir              *string            `yaml:"web_dir"`
+	DatabaseURL         *string            `yaml:"database_url"`
+	MaxUploadBytes      *int64             `yaml:"max_upload_bytes"`
+	MaxConcurrentBuilds *int               `yaml:"max_concurrent_builds"`
+	KeepWorkDir         *bool              `yaml:"keep_work_dir"`
+	KeepLocalArtifact   *bool              `yaml:"keep_local_artifact"`
+	BuildTimeoutMinutes *int               `yaml:"build_timeout_minutes"`
 	Storage             *fileStorageConfig `yaml:"storage"`
 }
 
@@ -208,12 +207,6 @@ func applyFile(fc fileConfig, cfg *Config) {
 	applyStr(fc.BuiltinDir, &cfg.BuiltinDir)
 	applyStr(fc.WebDir, &cfg.WebDir)
 	applyStr(fc.DatabaseURL, &cfg.DatabaseURL)
-	applyStr(fc.IsoDir, &cfg.IsoDir)
-	applyStr(fc.UploadDir, &cfg.UploadDir)
-	applyStr(fc.WorkDir, &cfg.WorkDir)
-	applyStr(fc.BuildDir, &cfg.BuildDir)
-	applyStr(fc.KickDir, &cfg.KickDir)
-	applyStr(fc.ArtifactDir, &cfg.ArtifactDir)
 	applyInt64(fc.MaxUploadBytes, &cfg.MaxUploadBytes)
 	applyInt(fc.MaxConcurrentBuilds, &cfg.MaxConcurrentBuilds)
 	applyBool(fc.KeepWorkDir, &cfg.KeepWorkDir)

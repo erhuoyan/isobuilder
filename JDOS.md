@@ -73,8 +73,9 @@ isobuilder 的 `/opt/isobuilder/data` 需要持久化（基础镜像库、构建
 - 环境变量同根 `README.md` 配置表；`ISOBUILDER_DATA_DIR` 默认 `/opt/isobuilder/data`（NFS 挂载点）
 - **配置推荐走配置文件**：把 `config.yaml` 放到 `/home/export/App/cfg/config.yaml`，
   `bin/start.sh` 检测到即自动加 `-c`，无需任何环境变量注入。可写 `addr`、`data_dir`、
-  `log_dir`、`database_url`、各子目录（`iso_dir`/`work_dir`/…）、`max_concurrent_builds` 等，
-  未写的键继续沿用环境变量/默认值。完整键见 `deploy/config.example.yaml`。
+  `log_dir`、`database_url`、`max_concurrent_builds` 等，未写的键继续沿用环境变量/默认值。
+  `isos`/`uploads`/`work`/`builds`/`kickstarts`/`artifacts` 均由 `data_dir` 派生，不单独配置。
+  完整键见 `deploy/config.example.yaml`。
   路径也可用 `ISOBUILDER_CONFIG` 覆盖。文件缺失/解析失败会直接退出，不静默回退。
 - 密钥（`ISOBUILDER_AUTH_TOKEN` 等）仍走 jdos 配置管理注入，不进镜像；对象存储配置
   在 Web「系统配置」页维护、存于数据库。

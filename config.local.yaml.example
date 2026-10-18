@@ -9,6 +9,7 @@
 # 监听端口（改这里就不用动 compose 的 environment）
 addr: ":8080"
 
+# isos/uploads/work/builds/kickstarts/artifacts 都从 data_dir 派生，无需单独配置
 data_dir: /opt/isobuilder/data
 log_dir: /export/log/isobuilder
 

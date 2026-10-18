@@ -65,7 +65,6 @@ func TestLoadFileOverridesAll(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 	body := "addr: \":9090\"\n" +
 		"data_dir: " + root + "\n" +
-		"iso_dir: " + filepath.Join(root, "my-isos") + "\n" +
 		"auth_token: secret-token\n" +
 		"max_concurrent_builds: 4\n" +
 		"max_upload_bytes: 1024\n" +
@@ -86,12 +85,22 @@ func TestLoadFileOverridesAll(t *testing.T) {
 	if cfg.DataDir != root {
 		t.Errorf("DataDir = %q, want %q", cfg.DataDir, root)
 	}
-	if want := filepath.Join(root, "my-isos"); cfg.IsoDir != want {
-		t.Errorf("IsoDir = %q, want %q", cfg.IsoDir, want)
+	// Every content directory derives from data_dir; none is configurable
+	// separately, so overriding data_dir must relocate all of them.
+	for name, got := range map[string]string{
+		"isos":       cfg.IsoDir,
+		"uploads":    cfg.UploadDir,
+		"work":       cfg.WorkDir,
+		"builds":     cfg.BuildDir,
+		"kickstarts": cfg.KickDir,
+		"artifacts":  cfg.ArtifactDir,
+	} {
+		if want := filepath.Join(root, name); got != want {
+			t.Errorf("%s dir = %q, want %q", name, got, want)
+		}
 	}
-	// Dirs the file omits still derive from the overridden data_dir.
-	if want := filepath.Join(root, "work"); cfg.WorkDir != want {
-		t.Errorf("WorkDir = %q, want %q", cfg.WorkDir, want)
+	if want := filepath.Join(root, "isobuilder.db"); cfg.DBPath != want {
+		t.Errorf("DBPath = %q, want %q", cfg.DBPath, want)
 	}
 	if cfg.AuthToken != "secret-token" {
 		t.Errorf("AuthToken = %q", cfg.AuthToken)

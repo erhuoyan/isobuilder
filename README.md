@@ -153,9 +153,10 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
 isobuilder -c /path/to/config.yaml
 ```
 
-YAML 里可写全部运行时参数（`addr`、`data_dir`、`log_dir`、`database_url`、
-`iso_dir`/`work_dir` 等各目录、`max_concurrent_builds`…），只写需要改的键，
-未出现的键沿用环境变量/默认值。完整键列表见 [`deploy/config.example.yaml`](deploy/config.example.yaml)。
+YAML 里可写运行时参数（`addr`、`data_dir`、`log_dir`、`database_url`、
+`max_concurrent_builds`…），只写需要改的键，未出现的键沿用环境变量/默认值。
+`isos`/`uploads`/`work`/`builds`/`kickstarts`/`artifacts` 都由 `data_dir` 自动派生，
+不单独配置。完整键列表见 [`deploy/config.example.yaml`](deploy/config.example.yaml)。
 
 > JDOS：把文件放到 `/home/export/App/cfg/config.yaml`，`bin/start.sh` 会自动加 `-c`。
 > K8s：Secret 挂载 + `args: [-c, /etc/isobuilder/config.yaml]`。

@@ -19,7 +19,9 @@ addr: ":8080"
 # auth_token: ""
 
 # ── 目录 ──────────────────────────────────────────────────────────────
-# 数据根目录。下面各子目录默认由它派生，也可以单独覆盖。
+# 数据根目录。isos/ uploads/ work/ builds/ kickstarts/ artifacts/ 与
+# isobuilder.db 全部由它自动派生，不单独配置——把它们拆到不同文件系统会
+# 破坏产物移动（跨设备退化为复制，需要双倍空间）。
 data_dir: /opt/isobuilder/data
 
 # 启动/停止脚本的日志目录（Go 程序本身写 stderr，由脚本重定向）。
@@ -28,14 +30,6 @@ log_dir: /export/log/isobuilder
 # 内置资源目录（镜像内，一般不用改）
 # builtin_dir: /opt/isobuilder/kickstarts
 # web_dir: /opt/isobuilder/web
-
-# 子目录覆盖（默认 <data_dir>/isos 等）
-# iso_dir: /opt/isobuilder/data/isos         # 基础镜像库
-# upload_dir: /opt/isobuilder/data/uploads   # 上传中转
-# work_dir: /opt/isobuilder/data/work        # 构建工作区（峰值 2×ISO）
-# build_dir: /opt/isobuilder/data/builds     # 构建日志
-# kick_dir: /opt/isobuilder/data/kickstarts  # 用户上传的 kickstart
-# artifact_dir: /opt/isobuilder/data/artifacts  # 产物（未配对象存储时）
 
 # ── 数据库 ────────────────────────────────────────────────────────────
 # 留空 = 容器内 SQLite（<data_dir>/isobuilder.db）。
