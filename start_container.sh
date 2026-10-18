@@ -41,9 +41,13 @@ curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 # ┃ 【工程段】应用专属：数据/日志目录。换项目改这段                    ┃
 # ┃ （/export 是 jdos 本地盘；只有可写目录要给 admin）                ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-mkdir -p /data/builds /data/isos /data/work /data/artifacts /data/uploads \
+# 数据目录：NFS 由平台挂载到 /opt/isobuilder/data（jdos_fstab），
+# 这里只补子目录；目录本身不存在时说明挂载没配好，mkdir 会落到本地盘。
+DATA_DIR=/opt/isobuilder/data
+mkdir -p "$DATA_DIR"/builds "$DATA_DIR"/isos "$DATA_DIR"/work \
+         "$DATA_DIR"/artifacts "$DATA_DIR"/uploads \
          /export/log/isobuilder
-chown -R admin:admin /data /export/log/isobuilder
+chown -R admin:admin "$DATA_DIR" /export/log/isobuilder
 
 # 引导日志：预创建 + chown（root tee -a 建的文件属主是 root，admin 写不进就丢日志）
 BOOT_LOG=/export/log/isobuilder/boot.log

@@ -74,7 +74,7 @@ tar xzf /root/isobuilder-0.1.0-linux-amd64.tar.gz -C /root/isobuilder-rel --stri
 构建失败：磁盘空间不足：基础镜像 15.00 GB，构建峰值约需 31.00 GB，当前可用 12.00 GB。
 ```
 
-**容器部署**把 `/data` 挂成卷即可：`docker run -v isobuilder-data:/data ...`。业务空间的核心公式是
+**容器部署**把 `/opt/isobuilder/data` 挂成卷即可：`docker run -v isobuilder-data:/opt/isobuilder/data ...`。业务空间的核心公式是
 `单卷 >= 基础镜像 ×(自己保留多少份) + 最大 ISO ×2 ×并发数`。容器也默认把 uploaded 产物本地副本删掉，所以**容器本身只需要控制：基础镜像数量 + 并发构建**。
 
 ### 1.5 运行身份

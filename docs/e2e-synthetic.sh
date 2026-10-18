@@ -82,7 +82,7 @@ if [ -n "${E2E_BASE:-}" ]; then
     curl -fsS "$BASE/api/health" >/dev/null || { echo "实例不可达: $BASE"; exit 1; }
 else
     step "1. 启动 isobuilder 容器（$IMG）"
-    CID="$(docker run -d --restart=no -p $PORT:8080 -v "$DATA:/data" "$IMG")"
+    CID="$(docker run -d --restart=no -p $PORT:8080 -v "$DATA:/opt/isobuilder/data" "$IMG")"
     echo "   container: $CID"
 
     for i in $(seq 1 30); do

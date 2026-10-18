@@ -132,7 +132,7 @@ kubectl -n isobuilder apply -f deploy/k8s/service.yaml
 
 打开 **系统配置**，填 endpoint / bucket / AK / SK（密钥只写不读，保存后页面只显示「已配置」）。
 保存时用 `HeadBucket` 探活：连不上会明确提示「配置已保存，但连接失败」。
-`bucket` 留空 = 关闭对象存储，产物留在服务器 `/data/artifacts`，由后端直传下载。
+`bucket` 留空 = 关闭对象存储，产物留在服务器 `/opt/isobuilder/data/artifacts`，由后端直传下载。
 
 配置存在 SQLite 的 `settings` 表里，**重启不丢**；环境变量只是首次启动的默认值，
 两者关系见 `GET /api/settings` 的 `source` 字段（`db` / `env`）。
@@ -202,7 +202,7 @@ isobuilder/
 
 ## 已知边界
 
-- 解包使用 `xorriso -osirrox`（无 loop 挂载、无特权），代价是每构建需要 ~2×ISO 的工作空间，`/data/work` 留足（预检失败会先报错）。
+- 解包使用 `xorriso -osirrox`（无 loop 挂载、无特权），代价是每构建需要 ~2×ISO 的工作空间，`/opt/isobuilder/data/work` 留足（预检失败会先报错）。
 - 产物上传对象存储后**自动删除服务器本地副本**（`ISOBUILDER_KEEP_LOCAL_ARTIFACT=true` 可保留），容器仅有基础镜像与当前正在构建的一份占用。
 - 日志断点续读按字节 offset，客户端重连不丢行；服务进程重启会中断流（进程重启时未完成的构建会被标记为失败，不会假死）。
 - 预签名 URL 过期后 `GET /api/artifacts/{id}`（界面上「刷新链接」）自动续签。

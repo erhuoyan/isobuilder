@@ -36,7 +36,7 @@
   "sha256": "e3b0c442...",          // 校验中/失败时为空字符串
   "status": "ready",                // "uploading" | "downloading" | "hashing" | "ready" | "error"
   "source": "uploaded",             // "uploaded" | "registered" | "s3"
-  "path": "/data/isos/Rocky-9.8-x86_64-dvd.iso",
+  "path": "/opt/isobuilder/data/isos/Rocky-9.8-x86_64-dvd.iso",
   "created_at": "2026-09-29T07:11:02Z",
   "error": ""                       // status=error 时的原因
 }
@@ -167,8 +167,10 @@
   "max_concurrent_builds": 1,
   "storage": { "enabled": true, "driver": "s3", "endpoint": "https://oss.example.com",
                "bucket": "iso-builder", "prefix": "iso-builder", "presign_ttl_seconds": 86400 },
-  "disk": { "data_dir": "/data", "free_bytes": 812345678901, "iso_dir": "/data/isos",
-            "work_dir": "/data/work", "builds_dir": "/data/builds" }
+  "disk": { "data_dir": "/opt/isobuilder/data", "free_bytes": 812345678901,
+            "iso_dir": "/opt/isobuilder/data/isos",
+            "work_dir": "/opt/isobuilder/data/work",
+            "builds_dir": "/opt/isobuilder/data/builds" }
 }
 ```
 对象存储未配置时 `storage.enabled=false, driver=""`，产物改由 `GET /api/artifacts/{id}/download` 直传。
@@ -187,7 +189,7 @@
 `POST /api/isos/register` body（`source` 省略时为 `path`）：
 ```json
 // 1) 服务器本地文件
-{ "source": "path", "path": "/data/isos/x.iso", "name": "可选", "arch": "x86_64" }
+{ "source": "path", "path": "/opt/isobuilder/data/isos/x.iso", "name": "可选", "arch": "x86_64" }
 
 // 2) 从对象存储拉取（不填 AK/SK 时用「系统配置」里的凭据）
 { "source": "s3", "arch": "aarch64", "name": "可选",
@@ -226,7 +228,7 @@ s3 模式先 `HeadObject` 探活（错 key / 错凭据立刻报错），通过�
                "presign_ttl_seconds": 86400,
                "access_key": "可选", "secret_key": "可选" } }
 ```
-- `bucket: ""` → 关闭对象存储，产物改存本机 `/data/artifacts`，由 `GET /api/artifacts/{id}/download` 直传。
+- `bucket: ""` → 关闭对象存储，产物改存本机 `/opt/isobuilder/data/artifacts`，由 `GET /api/artifacts/{id}/download` 直传。
 - 保存前用 `HeadBucket` 探活；连不上 → `400 storage_unreachable`（**配置已保存**，错误信息说明原因）。
 - 立即生效范围：后续构建的产物上传、产物下载链接签名。历史产物仍指向它当时的 bucket。
 - 校验失败 → `400 invalid_settings`。

@@ -3,8 +3,8 @@
 # replicas 恒为 1，不是保守而是硬约束：
 #   1. 构建是单进程串行队列，启动时会把遗留的 queued/running 构建标记为失败，
 #      第二个副本会把第一个副本正在跑的构建判死。
-#   2. 所有副本共享同一个 /data 子目录（subPath），并发挂载会互相踩工作目录。
-# 需要吞吐时提高 ISOBUILDER_MAX_CONCURRENT_BUILDS（受 /data 容量与 I/O 约束）。
+#   2. 所有副本共享同一个 /opt/isobuilder/data 子目录，并发挂载会互相踩工作目录。
+# 需要吞吐时提高 ISOBUILDER_MAX_CONCURRENT_BUILDS（受数据卷容量与 I/O 约束）。
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -49,7 +49,7 @@ spec:
             - name: ISOBUILDER_ADDR
               value: ":8080"
             - name: ISOBUILDER_DATA_DIR
-              value: /data
+              value: /opt/isobuilder/data
             # 可选：设置后 API 需要 Authorization: Bearer <token>。
             - name: ISOBUILDER_AUTH_TOKEN
               valueFrom:
@@ -62,7 +62,7 @@ spec:
               value: "1"
           volumeMounts:
             - name: nfs
-              mountPath: /data
+              mountPath: /opt/isobuilder/data
             # 数据库配置文件（仅 database_url）来自 Secret，只读挂载。
             - name: db-config
               mountPath: /etc/isobuilder

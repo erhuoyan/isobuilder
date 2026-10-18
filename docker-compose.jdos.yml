@@ -32,7 +32,7 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       ISOBUILDER_ADDR: ":8080"
-      ISOBUILDER_DATA_DIR: /data
+      ISOBUILDER_DATA_DIR: /opt/isobuilder/data
       ISOBUILDER_WEB_DIR: /opt/isobuilder/web
       ISOBUILDER_BUILTIN_DIR: /opt/isobuilder/kickstarts
       TZ: Asia/Shanghai
@@ -42,7 +42,7 @@ services:
       # 新镜像走 -c 读它；只放 database_url 一个键（见 config.local.yaml.example）
       - ./config.local.yaml:/home/export/App/cfg/config.yaml:ro
       # 数据目录（ISO/构建产物/上传），宿主机持久化
-      - isobuilder-data:/data
+      - isobuilder-data:/opt/isobuilder/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
       interval: 15s

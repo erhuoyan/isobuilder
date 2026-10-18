@@ -11,7 +11,7 @@
                     ┌──────────────▼───────────────┐
                     │ Deployment isobuilder (×1)   │
                     │  -c /etc/isobuilder/config.yaml ──→ 云 RDS PostgreSQL
-                    │  /data ← PVC isobuilder-data │
+                    │  /opt/isobuilder/data ← PVC  │
                     └──────────────┬───────────────┘
                                    │  RWX
                     ┌──────────────▼───────────────┐

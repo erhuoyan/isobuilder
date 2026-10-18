@@ -9,7 +9,7 @@
 # 本地调试（先本地构建或拉取编译镜像）：
 #   docker build --build-arg BUILD_BASE=<编译镜像> -f containerlize/app/Dockerfile \
 #        -t isobuilder:jdos .
-#   docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos \
+#   docker run -d -p 8080:8080 -v /data/isobuilder:/opt/isobuilder/data isobuilder:jdos \
 #        /opt/isobuilder/isobuilder
 
 # ── Stage 1: 前端（编译基础镜像里的 Node/pnpm，JS 产物与架构无关）──────────────
@@ -76,11 +76,11 @@ RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
 RUN ssh-keygen -A
 
 ENV ISOBUILDER_ADDR=:8080 \
-    ISOBUILDER_DATA_DIR=/data \
+    ISOBUILDER_DATA_DIR=/opt/isobuilder/data \
     ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
     ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
 
-VOLUME ["/data"]
+VOLUME ["/opt/isobuilder/data"]
 EXPOSE 8080
 
 # jdos 约定 ENTRYPOINT（双 sleep 保活；容器常驻，服务由启停钩子管理）

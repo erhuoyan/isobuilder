@@ -8,7 +8,7 @@
 #
 # 解包原版 ISO 使用 xorriso -osirrox（无需 loop 挂载），容器不需要任何特权。
 # 代价是解包一次 ISO 的全部内容落盘（≈ 1 倍原 ISO 体积 + 输出同等大小），
-# 所以数据目录 /data 必须挂足容量的卷。
+# 所以数据目录 /opt/isobuilder/data 必须挂足容量的卷。
 #
 # 需要更小/无需 QEMU 的构建路径见 containerlize/standalone/Dockerfile + deploy/build-image.sh。
 
@@ -61,11 +61,11 @@ COPY kickstarts/openeuler.ks kickstarts/rocky9.ks ./kickstarts/
 COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
 ENV ISOBUILDER_ADDR=:8080 \
-    ISOBUILDER_DATA_DIR=/data \
+    ISOBUILDER_DATA_DIR=/opt/isobuilder/data \
     ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
     ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
 
-VOLUME ["/data"]
+VOLUME ["/opt/isobuilder/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["/opt/isobuilder/isobuilder"]

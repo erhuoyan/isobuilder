@@ -37,11 +37,11 @@ COPY scripts/repack-iso-x86.sh scripts/repack-iso-arm.sh ./scripts/
 
 ENV TZ=Asia/Shanghai \
     ISOBUILDER_ADDR=:8080 \
-    ISOBUILDER_DATA_DIR=/data \
+    ISOBUILDER_DATA_DIR=/opt/isobuilder/data \
     ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
     ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
 
-VOLUME ["/data"]
+VOLUME ["/opt/isobuilder/data"]
 EXPOSE 8080
 
 ENTRYPOINT ["/opt/isobuilder/isobuilder"]

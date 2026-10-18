@@ -80,7 +80,7 @@ func Load(configPath string) (Config, error) {
 		fileDB = strings.TrimSpace(fc.DatabaseURL)
 	}
 
-	dataDir := env("ISOBUILDER_DATA_DIR", "/data")
+	dataDir := env("ISOBUILDER_DATA_DIR", "/opt/isobuilder/data")
 	if !filepath.IsAbs(dataDir) {
 		abs, err := filepath.Abs(dataDir)
 		if err != nil {

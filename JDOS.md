@@ -59,18 +59,18 @@ ENTRYPOINT 固定不可改：
 
 ## 持久化存储：NFS 共享存储
 
-isobuilder 的 `/data` 需要持久化（基础镜像库、构建工作目录、产物、SQLite DB）。jdos 云翼区通过 **NFS 挂载** 实现：
+isobuilder 的 `/opt/isobuilder/data` 需要持久化（基础镜像库、构建工作目录、产物、SQLite DB）。jdos 云翼区通过 **NFS 挂载** 实现：
 
 1. **申请**：http://online.cbpmgt.com/ 新建工单 → 搜索「NFS 共享储存申请」→ 按要求填写（挂载点容量按需，单构建占 2× 基础 ISO 大小，多个基础镜像建议 ≥200G）；
 2. **审批通过后**：行云部署平台 → 实例列表 → 配置管理 → 新增配置文件 `jdos_fstab`，把工单返回的 fstab 内容原样粘入；
-3. **更新上线**：对容器执行更新上线，配置生效后 NFS 挂载到容器内——确保最终落在 `/data`；若工单挂载路径不是 `/data`，在 `jdos_fstab` 里把挂载点写为 `/data`，或改 `ISOBUILDER_DATA_DIR` 环境变量指向实际挂载点。
+3. **更新上线**：对容器执行更新上线，配置生效后 NFS 挂载到容器内——确保最终落在 `/opt/isobuilder/data`；若工单挂载路径不是它，在 `jdos_fstab` 里把挂载点写为 `/opt/isobuilder/data`，或改 `ISOBUILDER_DATA_DIR` 环境变量指向实际挂载点。
 
 > NFS 服务端需 `no_root_squash`。日志目录走 `/export/Logs`（jdos 本地盘），应用 stdout 重定向在 start.sh 里写 `/export/log/isobuilder/stdout.log`。
 
 ## 环境变量与端口
 
 - 服务端口 `8080`，jdos 实例按平台规则配置端口映射/访问
-- 环境变量同根 `README.md` 配置表；`ISOBUILDER_DATA_DIR` 默认 `/data`（NFS 挂载点）
+- 环境变量同根 `README.md` 配置表；`ISOBUILDER_DATA_DIR` 默认 `/opt/isobuilder/data`（NFS 挂载点）
 - **数据库推荐走配置文件**：把 `config.yaml` 放到 `/home/export/App/cfg/config.yaml`，
   `bin/start.sh` 检测到即自动加 `-c`，无需任何环境变量注入。文件只放一个键
   `database_url: postgres://...`（含 `@` 等特殊字符时比环境变量省心）。
@@ -90,7 +90,7 @@ docker build --build-arg BUILD_BASE=isobuilder-build-base:local \
      -f containerlize/app/Dockerfile -t isobuilder:jdos .
 
 # 本地跑（无 jdos 宿管，手工启动）
-docker run -d -p 8080:8080 -v /data/isobuilder:/data isobuilder:jdos \
+docker run -d -p 8080:8080 -v /data/isobuilder:/opt/isobuilder/data isobuilder:jdos \
      /opt/isobuilder/isobuilder
 ```
 

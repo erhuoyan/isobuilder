@@ -10,7 +10,7 @@ BIN=isobuilder
 LOG_DIR=/export/log/isobuilder
 
 export ISOBUILDER_ADDR="${ISOBUILDER_ADDR:-:8080}"
-export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/data}"
+export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/opt/isobuilder/data}"
 export ISOBUILDER_WEB_DIR="${ISOBUILDER_WEB_DIR:-$APP_HOME/web}"
 export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
 
