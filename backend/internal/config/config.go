@@ -22,8 +22,12 @@ import (
 
 // Config is the fully resolved runtime configuration.
 type Config struct {
+	// Addr is the HTTP listen address in Go's host:port form, passed to
+	// net.Listen. An empty host (":8080") binds every interface — which is
+	// what container port mapping needs; "127.0.0.1:8080" would make the
+	// service unreachable from outside the container.
 	Addr      string
-	DataDir   string
+	DataDir   string // root for isos/work/builds/…; subdirs derive from it
 	AuthToken string
 
 	BuiltinDir string // directory holding built-in kickstart templates

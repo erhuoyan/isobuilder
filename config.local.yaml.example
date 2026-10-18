@@ -8,6 +8,8 @@
 # 优先级：本文件 > 环境变量 > 默认值。只写需要改的键即可。
 # 完整键列表见 deploy/config.example.yaml。
 
+# 监听地址，Go 的 "host:port" 形式。冒号前留空 = 绑定所有网卡，
+# 容器部署必须如此（写 127.0.0.1:8080 会导致端口映射访问不到）。
 addr: ":8080"
 
 # isos/uploads/work/builds/kickstarts/artifacts 都从 data_dir 派生，无需单独配置
