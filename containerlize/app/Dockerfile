@@ -75,11 +75,9 @@ RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
 # sshd 首跑需生成 host key
 RUN ssh-keygen -A
 
-# jdos 平台在启停流程里会自己 mkdir /export/Logs（日志收集）与 /export/Data。
-# 若 /export 不存在，运行期的 start_container.sh（以 root 跑）会先把它建成
-# root:root，随后平台以 admin 身份 mkdir 就报 Permission denied，
-# 实例停止失败并进入 Failed 状态。这里预建并归属 admin，平台与脚本都能写。
-RUN mkdir -p /export/Data /export/Logs && chown -R admin:admin /export
+# 注意：/export 在行云发布后会被平台挂载覆盖，构建期在这里创建目录不会
+# 保留下来。因此 /export/Logs 的创建放在 ENTRYPOINT 里（见文件末尾），
+# 在挂载生效之后执行。
 
 ENV ISOBUILDER_ADDR=:8080 \
     ISOBUILDER_DATA_DIR=/opt/isobuilder/data \
@@ -90,4 +88,12 @@ VOLUME ["/opt/isobuilder/data"]
 EXPOSE 8080
 
 # jdos 约定 ENTRYPOINT（双 sleep 保活；容器常驻，服务由启停钩子管理）
-ENTRYPOINT /home/admin/tini -- sh -c "/usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"
+#
+# 开头的 mkdir 必须在 ENTRYPOINT 里、而不是构建期：/export 会被行云发布
+# 挂载覆盖，构建期建的目录会消失。平台的启停流程（以非 root 用户 dev 运行）
+# 会执行 `mkdir /export/Logs`，若 /export 不存在或不可写就会 Permission denied，
+# 导致实例停止失败并进入 Failed 状态。
+#
+# chown + chmod 双保险：chown 对齐平台约定（admin:admin），chmod 0777 兜住
+# dev 这类非 admin 组用户。/export 在容器内只是平台的日志暂存区，不涉及宿主。
+ENTRYPOINT /home/admin/tini -- sh -c "mkdir -p /export/Logs /export/Data && chown -R admin:admin /export && chmod -R 0777 /export && /usr/sbin/sshd && /usr/sbin/crond && bash /home/admin/start_container.sh && sleep 9999999d && sleep 9999999d"
