@@ -2,7 +2,9 @@
 #
 #   cp config.local.yaml.example config.local.yaml
 #   chmod 600 config.local.yaml        # 含密码，别让同机其他用户读
+#   docker compose -f docker-compose.jdos.yml up -d
 #
+# 这是本地唯一的配置来源——compose 通过 -c 把它挂进容器。
 # 优先级：本文件 > 环境变量 > 默认值。只写需要改的键即可。
 # 完整键列表见 deploy/config.example.yaml。
 

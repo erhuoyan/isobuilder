@@ -5,5 +5,4 @@ backend/dist/
 release/
 
 # 本地测试用的真实配置（含数据库密码），只提交 .example 模板
-.env.local
 config.local.yaml

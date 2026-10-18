@@ -1,21 +1,18 @@
-# 本地/测试：直接用 JDOS 制品（hub.is.jd.com）起 isobuilder。
+# 本地/测试：用 JDOS 制品或本仓库构建的镜像起 isobuilder。
 #
-# 镜像与生产完全同一个，但入口被覆盖成 tini + 二进制直启：
-# 镜像原生的 start_container.sh 会 while true 重试 mirrors.jdfin.local（jdos
-# 平台内网域名），本地解析不到就永远起不来；它另外还要 sshd/crond/公钥注入，
-# 那些本地都没有意义。覆盖入口比改脚本更干净——镜像保持原样、可校验。
+# 入口被覆盖成二进制直启：JDOS 镜像原生的 start_container.sh 会 while true
+# 重试 mirrors.jdfin.local（jdos 平台内网域名），本地解析不到就永远起不来；
+# 它另外还要 sshd/crond/公钥注入，那些本地都没有意义。覆盖入口比改脚本更干净。
 #
-# 数据库连接的两种传法同时保留，兼容不同时期的镜像：
-#   - 环境变量 ISOBUILDER_DB_URL：所有版本都认（老镜像只有这条路）
-#   - -c config.yaml：只有含该功能的镜像才解析（不认的镜像会忽略参数）
+# 数据库只有一个来源：挂载进来的 config.yaml，由 -c 指定。改完重启即生效。
 #
 # 用法：
-#   cp .env.local.example .env.local && chmod 600 .env.local   # 填 DSN
-#   docker compose -f docker-compose.jdos.yml --env-file .env.local up -d
+#   cp config.local.yaml.example config.local.yaml && chmod 600 config.local.yaml
+#   docker compose -f docker-compose.jdos.yml up -d
 #   docker compose -f docker-compose.jdos.yml logs -f
 #   docker compose -f docker-compose.jdos.yml down
 #
-# 换镜像：
+# 换镜像（默认用本仓库构建的，见 deploy/build-image.sh）：
 #   IMAGE=hub.is.jd.com/technical-service/isobuilder:<tag> \
 #     docker compose -f docker-compose.jdos.yml up -d
 services:
@@ -36,10 +33,8 @@ services:
       ISOBUILDER_WEB_DIR: /opt/isobuilder/web
       ISOBUILDER_BUILTIN_DIR: /opt/isobuilder/kickstarts
       TZ: Asia/Shanghai
-      # 老镜像不认 -c，只读这个；留空则退回容器内 SQLite。
-      ISOBUILDER_DB_URL: ${ISOBUILDER_DB_URL:-}
     volumes:
-      # 新镜像走 -c 读它；只放 database_url 一个键（见 config.local.yaml.example）
+      # 全部数据库配置在这里（database_url 等），见 config.local.yaml.example
       - ./config.local.yaml:/home/export/App/cfg/config.yaml:ro
       # 数据目录（ISO/构建产物/上传），宿主机持久化
       - isobuilder-data:/opt/isobuilder/data
