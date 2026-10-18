@@ -1,0 +1,18 @@
+# 本地测试用配置示例：复制为 config.local.yaml 后修改。
+#
+#   cp config.local.yaml.example config.local.yaml
+#   chmod 600 config.local.yaml        # 含密码，别让同机其他用户读
+#
+# 只放 database_url 一个键。对象存储（S3/OSS）等其余配置在
+# Web「系统配置」页维护、存于数据库，不需要写在这里。
+#
+# 密码含 @ : / ? # 时，URL 形式要百分号编码（@ → %40）；
+# 或直接用 key=value 形式，无需转义（推荐）。
+
+# key=value 形式（推荐）：走 RDS 外网地址，容器内也可达
+database_url: 'host=pg-internet-north1-3df622c70ad543a6.rds.jdcloud.com port=5432 user=gengyan15 password=CentOS@2026 dbname=isobuilder sslmode=prefer'
+
+# URL 形式（二选一）：
+# database_url: 'postgres://gengyan15:CentOS%402026@pg-internet-north1-3df622c70ad543a6.rds.jdcloud.com:5432/isobuilder?sslmode=prefer'
+
+# 想用本机 SQLite（不连外部库）就把上面整行注释掉即可。

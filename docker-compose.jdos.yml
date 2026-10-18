@@ -1,0 +1,57 @@
+# 本地/测试：直接用 JDOS 制品（hub.is.jd.com）起 isobuilder。
+#
+# 镜像与生产完全同一个，但入口被覆盖成 tini + 二进制直启：
+# 镜像原生的 start_container.sh 会 while true 重试 mirrors.jdfin.local（jdos
+# 平台内网域名），本地解析不到就永远起不来；它另外还要 sshd/crond/公钥注入，
+# 那些本地都没有意义。覆盖入口比改脚本更干净——镜像保持原样、可校验。
+#
+# 数据库连接的两种传法同时保留，兼容不同时期的镜像：
+#   - 环境变量 ISOBUILDER_DB_URL：所有版本都认（老镜像只有这条路）
+#   - -c config.yaml：只有含该功能的镜像才解析（不认的镜像会忽略参数）
+#
+# 用法：
+#   cp .env.local.example .env.local && chmod 600 .env.local   # 填 DSN
+#   docker compose -f docker-compose.jdos.yml --env-file .env.local up -d
+#   docker compose -f docker-compose.jdos.yml logs -f
+#   docker compose -f docker-compose.jdos.yml down
+#
+# 换镜像：
+#   IMAGE=hub.is.jd.com/technical-service/isobuilder:<tag> \
+#     docker compose -f docker-compose.jdos.yml up -d
+services:
+  isobuilder:
+    image: ${IMAGE:-hub.is.jd.com/technical-service/isobuilder:v20261017.174220-bb119621-kegm91}
+    # JDOS 制品是 linux/amd64；Apple Silicon 靠 Rosetta 直接跑。
+    platform: linux/amd64
+    container_name: isobuilder-jdos
+    restart: unless-stopped
+    # 覆盖镜像 ENTRYPOINT（tini → 二进制），跳过 jdos 平台入口脚本。
+    entrypoint: ["/home/admin/tini", "--"]
+    command: ["/opt/isobuilder/isobuilder", "-c", "/home/export/App/cfg/config.yaml"]
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      ISOBUILDER_ADDR: ":8080"
+      ISOBUILDER_DATA_DIR: /data
+      ISOBUILDER_WEB_DIR: /opt/isobuilder/web
+      ISOBUILDER_BUILTIN_DIR: /opt/isobuilder/kickstarts
+      TZ: Asia/Shanghai
+      # 老镜像不认 -c，只读这个；留空则退回容器内 SQLite。
+      ISOBUILDER_DB_URL: ${ISOBUILDER_DB_URL:-}
+    volumes:
+      # 新镜像走 -c 读它；只放 database_url 一个键（见 config.local.yaml.example）
+      - ./config.local.yaml:/home/export/App/cfg/config.yaml:ro
+      # 数据目录（ISO/构建产物/上传），宿主机持久化
+      - isobuilder-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # ISO 构建（xorriso）是 CPU + 顺序 I/O 密集，按机器实际情况调整
+    cpus: "4"
+    mem_limit: 4g
+
+volumes:
+  isobuilder-data:

@@ -3,3 +3,7 @@ backend/dist/
 
 # 发布产物：deploy/release.sh 随时重新生成，不入库
 release/
+
+# 本地测试用的真实配置（含数据库密码），只提交 .example 模板
+.env.local
+config.local.yaml
