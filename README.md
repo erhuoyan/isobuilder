@@ -171,7 +171,7 @@ YAML 里可写运行时参数（`addr`、`data_dir`、`log_dir`、`database_url`
 | `ISOBUILDER_ADDR` | `:8080` | 监听地址 |
 | `ISOBUILDER_DATA_DIR` | `/opt/isobuilder/data` | 镜像/日志/产物/DB 根目录，生产要挂载卷 |
 | `ISOBUILDER_LOG_DIR` | `/export/log/isobuilder` | 启停脚本日志目录（也可写配置文件 `log_dir`） |
-| `ISOBUILDER_DB_URL` | 空 | PostgreSQL 连接串；**留空则用内置 SQLite**（`$DATA_DIR/isobuilder.db`） |
+| `ISOBUILDER_DB_URL` | 空 | PostgreSQL / MySQL 连接串；**留空则用内置 SQLite**（`$DATA_DIR/isobuilder.db`）。MySQL 支持 `mysql://user:pass@host:3306/db` 或原生 `user:pass@tcp(host:3306)/db` |
 | `ISOBUILDER_AUTH_TOKEN` | 空 | 设置后 API 需要 `Authorization: Bearer` |
 | `ISOBUILDER_S3_*` | 空 | 对象存储的首次默认值；**推荐改在 Web「系统配置」里维护** |
 | `ISOBUILDER_S3_PUBLIC_BASE` | 空 | 有公共基地址则跳过预签名，直接拼 URL |

@@ -37,7 +37,7 @@ func main() {
 
 	var st *store.Store
 	if cfg.DatabaseURL != "" {
-		st, err = store.OpenPostgres(cfg.DatabaseURL, "")
+		st, err = store.OpenDatabase(cfg.DatabaseURL)
 	} else {
 		st, err = store.OpenSQLite(cfg.DBPath)
 	}

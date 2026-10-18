@@ -12,7 +12,6 @@ import (
 	"isobuilder/internal/model"
 )
 
-
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -582,7 +581,6 @@ func (s *Store) artifactByBuild() (map[string]*model.Artifact, error) {
 	return out, rows.Err()
 }
 
-
 // --- Settings -----------------------------------------------------------
 
 // GetSetting returns a settings row, or an empty string when unset.
@@ -595,9 +593,18 @@ func (s *Store) GetSetting(key string) (string, error) {
 	return value, err
 }
 
-// SetSetting writes a settings row.
+// SetSetting writes a settings row. The upsert syntax is the only statement
+// that differs across dialects, so it is chosen here rather than abstracted
+// away — everything else in this package is portable SQL.
 func (s *Store) SetSetting(key, value string) error {
-	_, err := s.exec(`INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
-	                     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`, key, value, Now())
+	var q string
+	if s.dialect == "mysql" {
+		q = `INSERT INTO settings(` + "`key`" + `, value, updated_at) VALUES(?,?,?)
+		     ON DUPLICATE KEY UPDATE value=VALUES(value), updated_at=VALUES(updated_at)`
+	} else {
+		q = `INSERT INTO settings(key, value, updated_at) VALUES(?,?,?)
+		     ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`
+	}
+	_, err := s.exec(q, key, value, Now())
 	return err
 }

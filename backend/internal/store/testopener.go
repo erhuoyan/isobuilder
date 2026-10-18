@@ -25,6 +25,20 @@ func OpenTest(tb testing.TB, sqlitePath string) *Store {
 		tb.Cleanup(func() { st.Close() })
 		return st
 	}
+	if strings.HasPrefix(strings.ToLower(testPostgresDSN), "mysql://") ||
+		strings.Contains(testPostgresDSN, "@tcp(") {
+		st, err := OpenMySQL(testPostgresDSN)
+		if err != nil {
+			tb.Fatalf("open mysql: %v", err)
+		}
+		// MySQL has no cross-test schema switch here; tests that need real
+		// isolation should point at a throwaway database.
+		tb.Cleanup(func() {
+			st.TruncateAllForTest()
+			st.Close()
+		})
+		return st
+	}
 	schema := fmt.Sprintf("test_%s", sanitizeSchema(tb.Name()))
 	st, err := OpenPostgres(testPostgresDSN, schema)
 	if err != nil {
@@ -51,6 +65,18 @@ func (s *Store) DropTestSchema(schema string) {
 	_, _ = s.db.Exec(`SET search_path TO public`)
 	if _, err := s.db.Exec(fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, quoteIdent(schema))); err != nil {
 		_ = err // best-effort: test hygiene, never crashes cleanup
+	}
+}
+
+// TruncateAllForTest empties every table so a shared MySQL test database does
+// not leak rows between runs. MySQL has no cheap per-test schema switch, and
+// the tables have no foreign keys, so TRUNCATE is enough.
+func (s *Store) TruncateAllForTest() {
+	if s.dialect != "mysql" {
+		return
+	}
+	for _, t := range []string{"isos", "kickstarts", "scripts", "projects", "builds", "artifacts", "settings"} {
+		_, _ = s.db.Exec("TRUNCATE TABLE " + t)
 	}
 }
 

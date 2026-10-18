@@ -33,9 +33,19 @@ log_dir: /export/log/isobuilder
 
 # ── 数据库 ────────────────────────────────────────────────────────────
 # 留空 = 容器内 SQLite（<data_dir>/isobuilder.db）。
-# URL 形式：
-#   database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
-# key=value 形式（密码含 @ 等特殊字符时无需转义，推荐）：
+# 后端按 DSN 形状自动识别，三种都支持：
+#
+#   PostgreSQL（URL）:
+#     database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+#   PostgreSQL（key=value，密码含 @ 时无需转义）:
+#     database_url: 'host=204.1.2.3 port=5432 user=isobuilder password=secret dbname=isobuilder sslmode=prefer'
+#   MySQL（URL）:
+#     database_url: 'mysql://user:pass@host:3306/isobuilder'
+#   MySQL（驱动原生 DSN）:
+#     database_url: 'user:pass@tcp(host:3306)/isobuilder?charset=utf8mb4'
+#
+# MySQL 库需提前建好（CREATE DATABASE isobuilder CHARACTER SET utf8mb4），
+# 表由程序首次启动自动创建。
 database_url: 'host=204.1.2.3 port=5432 user=isobuilder password=secret dbname=isobuilder sslmode=prefer'
 
 # ── 构建限制 ──────────────────────────────────────────────────────────

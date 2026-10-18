@@ -79,6 +79,9 @@ isobuilder 的 `/opt/isobuilder/data` 需要持久化（基础镜像库、构建
   路径也可用 `ISOBUILDER_CONFIG` 覆盖。文件缺失/解析失败会直接退出，不静默回退。
 - 密钥（`ISOBUILDER_AUTH_TOKEN` 等）仍走 jdos 配置管理注入，不进镜像；对象存储配置
   在 Web「系统配置」页维护、存于数据库。
+- **数据库**：PostgreSQL 与 MySQL 都支持（按 DSN 自动识别）。JDOS 只提供 MySQL 时写
+  `mysql://user:pass@host:3306/isobuilder` 即可；库需先建好，表由程序自动创建。
+  没有外部数据库时也可以直接用 NFS 上的 SQLite（副本必须恒为 1）。
 
 ## 本地调试
 

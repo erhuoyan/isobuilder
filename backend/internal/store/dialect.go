@@ -1,16 +1,18 @@
 // Package store persists ISO library, kickstart templates, projects, builds and
 // artifacts. SQLite is the embedded default (a file under the data directory);
-// PostgreSQL is selected by setting ISOBUILDER_DB_URL. The owner chooses the
-// active database, the query layer stays dialect-blind.
+// PostgreSQL or MySQL is selected by setting ISOBUILDER_DB_URL. The owner
+// chooses the active database, the query layer stays dialect-blind.
 package store
 
 import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 
@@ -22,7 +24,7 @@ import (
 // PostgreSQL the server-side transaction queue does that job.
 type Store struct {
 	db      *sql.DB
-	dialect string // "sqlite" | "postgres"
+	dialect string // "sqlite" | "postgres" | "mysql"
 	schema  string // non-empty → PostgreSQL schema for test isolation
 }
 
@@ -91,6 +93,106 @@ func OpenPostgres(dsn, schema string) (*Store, error) {
 	return s, nil
 }
 
+// OpenMySQL opens a MySQL/MariaDB database. dsn accepts either the native
+// go-sql-driver form (user:pass@tcp(host:3306)/db?charset=utf8mb4) or a URL
+// (mysql://user:pass@host:3306/db), which is what most operators paste from a
+// cloud console. Timestamps are stored as RFC3339 strings, so parseTime is not
+// needed and the column types stay TEXT/VARCHAR like the other dialects.
+func OpenMySQL(dsn string) (*Store, error) {
+	native, err := mysqlNativeDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("mysql", native)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("connect mysql: %w", err)
+	}
+	s := &Store{db: db, dialect: "mysql"}
+	if err := s.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
+// mysqlNativeDSN converts mysql:// URLs into the driver's native DSN form and
+// passes native DSNs through unchanged.
+func mysqlNativeDSN(dsn string) (string, error) {
+	if !strings.HasPrefix(dsn, "mysql://") {
+		if strings.Contains(dsn, "@tcp(") || strings.Contains(dsn, "@unix(") {
+			return withMultiStatements(dsn), nil
+		}
+		return "", fmt.Errorf("mysql dsn must be mysql://user:pass@host:port/db or user:pass@tcp(host:port)/db")
+	}
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse mysql url: %w", err)
+	}
+	user := ""
+	if u.User != nil {
+		user = u.User.Username()
+		if pw, ok := u.User.Password(); ok {
+			user += ":" + pw
+		}
+	}
+	host := u.Host
+	if u.Port() == "" {
+		host = net.JoinHostPort(u.Hostname(), "3306")
+	}
+	dbname := strings.TrimPrefix(u.Path, "/")
+	if dbname == "" {
+		dbname = "isobuilder"
+	}
+	q := u.Query()
+	if q.Get("charset") == "" {
+		q.Set("charset", "utf8mb4")
+	}
+	if q.Get("collation") == "" {
+		q.Set("collation", "utf8mb4_general_ci")
+	}
+	q.Set("parseTime", "false") // timestamps are RFC3339 strings, not TIME
+	q.Set("multiStatements", "true")
+	return fmt.Sprintf("%s@tcp(%s)/%s?%s", user, host, dbname, q.Encode()), nil
+}
+
+// withMultiStatements appends the driver option the schema bootstrap needs:
+// migrate sends the whole DDL as one Exec, which MySQL only allows when
+// multiStatements is on.
+func withMultiStatements(dsn string) string {
+	if strings.Contains(dsn, "multiStatements=") {
+		return dsn
+	}
+	sep := "?"
+	if strings.Contains(dsn, "?") {
+		sep = "&"
+	}
+	return dsn + sep + "multiStatements=true"
+}
+
+// OpenDatabase selects the backend from the DSN shape:
+//
+//	mysql://…                → MySQL
+//	user:pass@tcp(host)/db   → MySQL (native driver DSN)
+//	postgres://… / host=…    → PostgreSQL
+//
+// An empty DSN is handled by the caller (embedded SQLite).
+func OpenDatabase(dsn string) (*Store, error) {
+	lower := strings.ToLower(strings.TrimSpace(dsn))
+	switch {
+	case strings.HasPrefix(lower, "mysql://"),
+		strings.Contains(lower, "@tcp("),
+		strings.Contains(lower, "@unix("):
+		return OpenMySQL(dsn)
+	default:
+		return OpenPostgres(dsn, "")
+	}
+}
+
 // injectSearchPath rewrites a postgres URL or key=value DSN to pin the schema
 // in the search_path, so every pooled connection lands in the test schema
 // without wrapping the connector.
@@ -109,7 +211,6 @@ func injectSearchPath(dsn, schema string) string {
 	}
 	return dsn + " options='--search_path=" + searchPath + "'"
 }
-
 
 func quoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
@@ -388,13 +489,134 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `
 
+// MySQL schema. Differences from the other two are all mechanical:
+//   - TEXT cannot be a PRIMARY KEY or carry a DEFAULT, so identifiers are
+//     VARCHAR(n) and the long bodies are TEXT without defaults.
+//   - Indexes are declared inline; MySQL has no CREATE INDEX IF NOT EXISTS.
+//   - BOOLEAN is an alias for TINYINT(1); database/sql scans it into bool.
+//
+// Timestamps stay VARCHAR TEXT holding RFC3339, same as every other dialect,
+// so the API layer never sees a driver-specific time type.
+const mysqlSchema = `
+CREATE TABLE IF NOT EXISTS isos (
+  id         VARCHAR(32) NOT NULL PRIMARY KEY,
+  name       VARCHAR(255) NOT NULL,
+  filename   VARCHAR(255) NOT NULL,
+  arch       VARCHAR(16) NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  sha256     VARCHAR(64) NOT NULL DEFAULT '',
+  md5        VARCHAR(32) NOT NULL DEFAULT '',
+  remark     TEXT NOT NULL,
+  status     VARCHAR(16) NOT NULL,
+  source     VARCHAR(16) NOT NULL,
+  path       TEXT NOT NULL,
+  error      TEXT NOT NULL,
+  created_at VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS kickstarts (
+  id         VARCHAR(32) NOT NULL PRIMARY KEY,
+  name       VARCHAR(255) NOT NULL,
+  arch       VARCHAR(16) NOT NULL,
+  builtin    TINYINT(1) NOT NULL DEFAULT 0,
+  remark     TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS scripts (
+  id         VARCHAR(32) NOT NULL PRIMARY KEY,
+  name       VARCHAR(255) NOT NULL,
+  remark     TEXT NOT NULL,
+  content    MEDIUMTEXT NOT NULL,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at VARCHAR(32) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS projects (
+  id            VARCHAR(32) NOT NULL PRIMARY KEY,
+  name          VARCHAR(255) NOT NULL,
+  description   TEXT NOT NULL,
+  arch          VARCHAR(16) NOT NULL,
+  iso_id        VARCHAR(32) NOT NULL DEFAULT '',
+  kickstart_id  VARCHAR(32) NOT NULL DEFAULT '',
+  script_id     VARCHAR(32) NOT NULL DEFAULT '',
+  iso_label     VARCHAR(64) NOT NULL DEFAULT '',
+  output_name   VARCHAR(255) NOT NULL DEFAULT '',
+  post_script   MEDIUMTEXT NOT NULL,
+  payload_mode  VARCHAR(16) NOT NULL DEFAULT 'off',
+  hosts_format  VARCHAR(16) NOT NULL DEFAULT 'yaml',
+  hosts_raw     MEDIUMTEXT NOT NULL,
+  hosts_json    MEDIUMTEXT NOT NULL,
+  hosts_count   INT NOT NULL DEFAULT 0,
+  hosts_summary MEDIUMTEXT NOT NULL,
+  created_at    VARCHAR(32) NOT NULL,
+  updated_at    VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS builds (
+  id           VARCHAR(32) NOT NULL PRIMARY KEY,
+  project_id   VARCHAR(32) NOT NULL,
+  project_name VARCHAR(255) NOT NULL DEFAULT '',
+  status       VARCHAR(16) NOT NULL,
+  stage        VARCHAR(64) NOT NULL DEFAULT '',
+  stage_index  INT NOT NULL DEFAULT 0,
+  stage_total  INT NOT NULL DEFAULT 5,
+  progress     INT NOT NULL DEFAULT 0,
+  arch         VARCHAR(16) NOT NULL DEFAULT '',
+  iso_id       VARCHAR(32) NOT NULL DEFAULT '',
+  iso_name     VARCHAR(255) NOT NULL DEFAULT '',
+  iso_label    VARCHAR(64) NOT NULL DEFAULT '',
+  kickstart_id VARCHAR(32) NOT NULL DEFAULT '',
+  hosts_json   MEDIUMTEXT NOT NULL,
+  hosts_count  INT NOT NULL DEFAULT 0,
+  output_name  VARCHAR(255) NOT NULL DEFAULT '',
+  post_script  MEDIUMTEXT NOT NULL,
+  payload_mode VARCHAR(16) NOT NULL DEFAULT 'off',
+  work_dir     TEXT NOT NULL,
+  error        TEXT NOT NULL,
+  artifact_id  VARCHAR(32) NOT NULL DEFAULT '',
+  created_at   VARCHAR(32) NOT NULL,
+  started_at   VARCHAR(32) NOT NULL DEFAULT '',
+  finished_at  VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_builds_project (project_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS artifacts (
+  id             VARCHAR(32) NOT NULL PRIMARY KEY,
+  build_id       VARCHAR(32) NOT NULL,
+  filename       VARCHAR(255) NOT NULL,
+  size_bytes     BIGINT NOT NULL DEFAULT 0,
+  sha256         VARCHAR(64) NOT NULL DEFAULT '',
+  md5            VARCHAR(32) NOT NULL DEFAULT '',
+  storage        VARCHAR(32) NOT NULL,
+  storage_key    TEXT NOT NULL,
+  url            TEXT NOT NULL,
+  url_expires_at VARCHAR(32) NOT NULL DEFAULT '',
+  local_path     TEXT NOT NULL,
+  created_at     VARCHAR(32) NOT NULL,
+  KEY idx_artifacts_build (build_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS settings (
+  ` + "`key`" + `   VARCHAR(64) NOT NULL PRIMARY KEY,
+  value      MEDIUMTEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+`
+
 // migrate creates the schema and, for existing databases, adds columns that
 // were introduced after the first release. ALTER … ADD COLUMN is idempotent
 // by error-swallowing: a duplicate-column error means the migration ran.
 func (s *Store) migrate() error {
 	schema := sqliteSchema
-	if s.dialect == "postgres" {
+	switch s.dialect {
+	case "postgres":
 		schema = postgresSchema
+	case "mysql":
+		schema = mysqlSchema
 	}
 	if _, err := s.db.Exec(schema); err != nil {
 		return fmt.Errorf("migrate database: %w", err)
