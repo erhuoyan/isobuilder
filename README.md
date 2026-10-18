@@ -145,6 +145,22 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
               "presign_ttl_seconds":86400,"access_key":"...","secret_key":"..."}}'
 ```
 
+### 配置文件（-c）与环境变量
+
+两种配置方式等价，**配置文件优先**，环境变量是兜底：
+
+```bash
+isobuilder -c /path/to/config.yaml
+```
+
+YAML 里可写全部运行时参数（`addr`、`data_dir`、`log_dir`、`database_url`、
+`iso_dir`/`work_dir` 等各目录、`max_concurrent_builds`…），只写需要改的键，
+未出现的键沿用环境变量/默认值。完整键列表见 [`deploy/config.example.yaml`](deploy/config.example.yaml)。
+
+> JDOS：把文件放到 `/home/export/App/cfg/config.yaml`，`bin/start.sh` 会自动加 `-c`。
+> K8s：Secret 挂载 + `args: [-c, /etc/isobuilder/config.yaml]`。
+> 文件缺失或解析失败会直接退出，不会静默回退默认值。
+
 ### 环境变量（首次默认值 / 服务参数）
 
 见 `/etc/isobuilder/env` 与 `docker-compose.yml`。最常用的：
@@ -152,7 +168,8 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `ISOBUILDER_ADDR` | `:8080` | 监听地址 |
-| `ISOBUILDER_DATA_DIR` | `/data` | 镜像/日志/产物/DB 根目录，生产要挂载卷 |
+| `ISOBUILDER_DATA_DIR` | `/opt/isobuilder/data` | 镜像/日志/产物/DB 根目录，生产要挂载卷 |
+| `ISOBUILDER_LOG_DIR` | `/export/log/isobuilder` | 启停脚本日志目录（也可写配置文件 `log_dir`） |
 | `ISOBUILDER_DB_URL` | 空 | PostgreSQL 连接串；**留空则用内置 SQLite**（`$DATA_DIR/isobuilder.db`） |
 | `ISOBUILDER_AUTH_TOKEN` | 空 | 设置后 API 需要 `Authorization: Bearer` |
 | `ISOBUILDER_S3_*` | 空 | 对象存储的首次默认值；**推荐改在 Web「系统配置」里维护** |

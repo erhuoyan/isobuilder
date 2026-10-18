@@ -1,8 +1,11 @@
-// Package config loads isobuilder runtime configuration from environment
-// variables, optionally overridden by a small YAML file selected with -c that
-// exists for exactly one chicken-and-egg key: database_url. Everything else
-// the operator tunes (object storage, auth) already lives in the database
-// settings the UI edits, or in the environment.
+// Package config loads isobuilder runtime configuration. Defaults come from
+// environment variables; an optional YAML file (selected with -c) overrides
+// them key by key. A deployment can therefore run from a single mounted file
+// with no environment variables at all, while existing env-based setups keep
+// working unchanged.
+//
+// Precedence: config file > environment variable > built-in default.
+// Keys omitted from the file keep their environment/default value.
 package config
 
 import (
@@ -63,24 +66,27 @@ type StorageConfig struct {
 func (s StorageConfig) Enabled() bool { return s.Bucket != "" }
 
 // Load resolves runtime configuration. configPath is the YAML file named with
-// -c; "" means environment variables only. The file may set a single key,
-// database_url, which wins over ISOBUILDER_DB_URL. A missing or unreadable
-// file is an error, never a silent fallback.
+// -c; "" means environment variables only. A missing or unreadable file is an
+// error, never a silent fallback — that failure mode is exactly what makes a
+// "changed it but nothing happened" deployment hard to diagnose.
 func Load(configPath string) (Config, error) {
-	var fileDB string
+	var fc fileConfig
+	hasFile := false
 	if configPath != "" {
 		data, err := os.ReadFile(configPath)
 		if err != nil {
 			return Config{}, fmt.Errorf("read config file: %w", err)
 		}
-		var fc minimalConfig
 		if err := yaml.Unmarshal(data, &fc); err != nil {
 			return Config{}, fmt.Errorf("parse config file %s: %w", configPath, err)
 		}
-		fileDB = strings.TrimSpace(fc.DatabaseURL)
+		hasFile = true
 	}
 
 	dataDir := env("ISOBUILDER_DATA_DIR", "/opt/isobuilder/data")
+	if hasFile && fc.DataDir != nil && strings.TrimSpace(*fc.DataDir) != "" {
+		dataDir = strings.TrimSpace(*fc.DataDir)
+	}
 	if !filepath.IsAbs(dataDir) {
 		abs, err := filepath.Abs(dataDir)
 		if err != nil {
@@ -103,7 +109,7 @@ func Load(configPath string) (Config, error) {
 		BuildDir:    filepath.Join(dataDir, "builds"),
 		KickDir:     filepath.Join(dataDir, "kickstarts"),
 		ArtifactDir: filepath.Join(dataDir, "artifacts"),
-		DatabaseURL: firstNonEmpty(fileDB, strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL"))),
+		DatabaseURL: strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL")),
 		DBPath:      filepath.Join(dataDir, "isobuilder.db"),
 
 		MaxUploadBytes:      envBytes("ISOBUILDER_MAX_UPLOAD_BYTES", 40<<30),
@@ -126,15 +132,19 @@ func Load(configPath string) (Config, error) {
 		},
 	}
 
+	if hasFile {
+		applyFile(fc, &cfg)
+	}
+
 	if cfg.MaxConcurrentBuilds < 1 {
 		cfg.MaxConcurrentBuilds = 1
 	}
 	if cfg.MaxUploadBytes <= 0 {
-		return Config{}, errors.New("ISOBUILDER_MAX_UPLOAD_BYTES must be positive")
+		return Config{}, errors.New("max_upload_bytes must be positive")
 	}
 	if cfg.Storage.Enabled() {
 		if cfg.Storage.AccessKey == "" || cfg.Storage.SecretKey == "" {
-			return Config{}, errors.New("ISOBUILDER_S3_BUCKET set but ISOBUILDER_S3_ACCESS_KEY/ISOBUILDER_S3_SECRET_KEY missing")
+			return Config{}, errors.New("storage bucket set but access_key/secret_key missing")
 		}
 		if cfg.Storage.PresignTTL <= 0 {
 			cfg.Storage.PresignTTL = 24 * time.Hour
@@ -149,19 +159,109 @@ func Load(configPath string) (Config, error) {
 	return cfg, nil
 }
 
-// minimalConfig is the full YAML schema: exactly one key. It exists because
-// the database address must be known before the database can be opened.
-type minimalConfig struct {
-	DatabaseURL string `yaml:"database_url"`
+// fileConfig mirrors Config as YAML. Pointer fields tell "key absent in the
+// file" (nil, keep the environment/default) from "key explicitly set" — which
+// matters for booleans and numbers, where the zero value is meaningful.
+type fileConfig struct {
+	Addr                *string `yaml:"addr"`
+	DataDir             *string `yaml:"data_dir"`
+	AuthToken           *string `yaml:"auth_token"`
+	BuiltinDir          *string `yaml:"builtin_dir"`
+	WebDir              *string `yaml:"web_dir"`
+	DatabaseURL         *string `yaml:"database_url"`
+	IsoDir              *string `yaml:"iso_dir"`
+	UploadDir           *string `yaml:"upload_dir"`
+	WorkDir             *string `yaml:"work_dir"`
+	BuildDir            *string `yaml:"build_dir"`
+	KickDir             *string `yaml:"kick_dir"`
+	ArtifactDir         *string `yaml:"artifact_dir"`
+	MaxUploadBytes      *int64  `yaml:"max_upload_bytes"`
+	MaxConcurrentBuilds *int    `yaml:"max_concurrent_builds"`
+	KeepWorkDir         *bool   `yaml:"keep_work_dir"`
+	KeepLocalArtifact   *bool   `yaml:"keep_local_artifact"`
+	BuildTimeoutMinutes *int    `yaml:"build_timeout_minutes"`
+	Storage             *fileStorageConfig `yaml:"storage"`
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
+// fileStorageConfig lets object storage be seeded from the file. The database
+// settings row still wins at runtime (see settings.Load); this only replaces
+// the environment as the initial default.
+type fileStorageConfig struct {
+	Endpoint          *string `yaml:"endpoint"`
+	Region            *string `yaml:"region"`
+	Bucket            *string `yaml:"bucket"`
+	Prefix            *string `yaml:"prefix"`
+	AccessKey         *string `yaml:"access_key"`
+	SecretKey         *string `yaml:"secret_key"`
+	PublicBase        *string `yaml:"public_base"`
+	PresignTTLSeconds *int    `yaml:"presign_ttl_seconds"`
+	PathStyle         *bool   `yaml:"path_style"`
+	InsecureTLS       *bool   `yaml:"insecure_tls"`
+}
+
+// applyFile copies every key the file actually sets over the environment-
+// derived config. Strings only override when non-empty, so an explicit empty
+// value cannot accidentally blank out a required path.
+func applyFile(fc fileConfig, cfg *Config) {
+	applyStr(fc.Addr, &cfg.Addr)
+	applyStr(fc.AuthToken, &cfg.AuthToken)
+	applyStr(fc.BuiltinDir, &cfg.BuiltinDir)
+	applyStr(fc.WebDir, &cfg.WebDir)
+	applyStr(fc.DatabaseURL, &cfg.DatabaseURL)
+	applyStr(fc.IsoDir, &cfg.IsoDir)
+	applyStr(fc.UploadDir, &cfg.UploadDir)
+	applyStr(fc.WorkDir, &cfg.WorkDir)
+	applyStr(fc.BuildDir, &cfg.BuildDir)
+	applyStr(fc.KickDir, &cfg.KickDir)
+	applyStr(fc.ArtifactDir, &cfg.ArtifactDir)
+	applyInt64(fc.MaxUploadBytes, &cfg.MaxUploadBytes)
+	applyInt(fc.MaxConcurrentBuilds, &cfg.MaxConcurrentBuilds)
+	applyBool(fc.KeepWorkDir, &cfg.KeepWorkDir)
+	applyBool(fc.KeepLocalArtifact, &cfg.KeepLocalArtifact)
+	if fc.BuildTimeoutMinutes != nil && *fc.BuildTimeoutMinutes > 0 {
+		cfg.BuildTimeout = time.Duration(*fc.BuildTimeoutMinutes) * time.Minute
 	}
-	return ""
+	if fc.Storage != nil {
+		applyStr(fc.Storage.Endpoint, &cfg.Storage.Endpoint)
+		applyStr(fc.Storage.Region, &cfg.Storage.Region)
+		applyStr(fc.Storage.Bucket, &cfg.Storage.Bucket)
+		applyStr(fc.Storage.Prefix, &cfg.Storage.Prefix)
+		applyStr(fc.Storage.AccessKey, &cfg.Storage.AccessKey)
+		applyStr(fc.Storage.SecretKey, &cfg.Storage.SecretKey)
+		applyStr(fc.Storage.PublicBase, &cfg.Storage.PublicBase)
+		if fc.Storage.PresignTTLSeconds != nil && *fc.Storage.PresignTTLSeconds > 0 {
+			cfg.Storage.PresignTTL = time.Duration(*fc.Storage.PresignTTLSeconds) * time.Second
+		}
+		applyBool(fc.Storage.PathStyle, &cfg.Storage.PathStyle)
+		applyBool(fc.Storage.InsecureTLS, &cfg.Storage.InsecureTLS)
+	}
+}
+
+func applyStr(src *string, dst *string) {
+	if src == nil {
+		return
+	}
+	if v := strings.TrimSpace(*src); v != "" {
+		*dst = v
+	}
+}
+
+func applyInt64(src *int64, dst *int64) {
+	if src != nil && *src != 0 {
+		*dst = *src
+	}
+}
+
+func applyInt(src *int, dst *int) {
+	if src != nil && *src != 0 {
+		*dst = *src
+	}
+}
+
+func applyBool(src *bool, dst *bool) {
+	if src != nil {
+		*dst = *src
+	}
 }
 
 func env(key, def string) string {

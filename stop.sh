@@ -2,7 +2,24 @@
 # jdos 平台停止入口。真实停止脚本在镜像层 /home/export/App/bin/stop.sh。
 set -o pipefail   # 不用 -u：/etc/profile 引用未定义变量会炸
 
-LOG_DIR=/export/log/isobuilder
+# 日志目录从配置文件读（与启动链同一份），缺省 /export/log/isobuilder。
+CONFIG_FILE="${ISOBUILDER_CONFIG:-/home/export/App/cfg/config.yaml}"
+cfg_get() {
+    [ -f "$CONFIG_FILE" ] || return 1
+    local v
+    v=$(awk -v k="$1" '$0 ~ "^[[:space:]]*" k "[[:space:]]*:" {
+        sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", ""); print; exit
+    }' "$CONFIG_FILE" 2>/dev/null)
+    v=${v%$'\r'}
+    case "$v" in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
+if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
 BOOT_LOG=$LOG_DIR/boot.log
 log() { echo "[$(date '+%F %T')] [stop.sh] $*" | tee -a "$BOOT_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [stop.sh] $*"; }
 

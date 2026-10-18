@@ -2,21 +2,71 @@
 #
 #   isobuilder -c /path/to/config.yaml
 #
-# JDOS 部署：放到 /home/export/App/cfg/config.yaml，bin/start.sh 检测到即自动加 -c。
-# K8s 部署：见 deploy/k8s/secret.example.yaml（Secret 挂载 + args: [-c, ...]）。
+# JDOS：放到 /home/export/App/cfg/config.yaml，bin/start.sh 检测到即自动加 -c。
+# K8s ：Secret 挂载 + Deployment args: [-c, /etc/isobuilder/config.yaml]。
+# 本地：docker compose -f docker-compose.jdos.yml（已挂载该路径）。
 #
-# 这里只有一个键。对象存储、鉴权等其余配置在 Web「系统配置」页维护、存于数据库，
-# 或在环境变量里给（本文件优先级更高）。之所以要有这个文件，是因为"连哪个库"
-# 必须在打开数据库之前就知道，是数据库自身无法提供的鸡生蛋信息。
+# 优先级：本文件 > 环境变量 > 内置默认值。只写需要改的键即可，
+# 未出现的键继续沿用环境变量或默认值。所有键都是扁平的顶层键。
 #
-# 密码含 @ : / ? # 等特殊字符时，用 URL 形式要把它们百分号编码（如 @ → %40），
-# 或干脆用 key=value 形式（无需转义）。
+# 注意：值里若含 # 或 : 空格，请用引号包起来。
 
+# ── 服务 ──────────────────────────────────────────────────────────────
+# 监听地址；只写 :端口 即可监听所有网卡。
+addr: ":8080"
+
+# API 鉴权令牌；留空 = 不鉴权。设置后请求需 Authorization: Bearer <token>。
+# auth_token: ""
+
+# ── 目录 ──────────────────────────────────────────────────────────────
+# 数据根目录。下面各子目录默认由它派生，也可以单独覆盖。
+data_dir: /opt/isobuilder/data
+
+# 启动/停止脚本的日志目录（Go 程序本身写 stderr，由脚本重定向）。
+log_dir: /export/log/isobuilder
+
+# 内置资源目录（镜像内，一般不用改）
+# builtin_dir: /opt/isobuilder/kickstarts
+# web_dir: /opt/isobuilder/web
+
+# 子目录覆盖（默认 <data_dir>/isos 等）
+# iso_dir: /opt/isobuilder/data/isos         # 基础镜像库
+# upload_dir: /opt/isobuilder/data/uploads   # 上传中转
+# work_dir: /opt/isobuilder/data/work        # 构建工作区（峰值 2×ISO）
+# build_dir: /opt/isobuilder/data/builds     # 构建日志
+# kick_dir: /opt/isobuilder/data/kickstarts  # 用户上传的 kickstart
+# artifact_dir: /opt/isobuilder/data/artifacts  # 产物（未配对象存储时）
+
+# ── 数据库 ────────────────────────────────────────────────────────────
+# 留空 = 容器内 SQLite（<data_dir>/isobuilder.db）。
 # URL 形式：
-database_url: postgres://user:pass@host:5432/isobuilder?sslmode=prefer
+#   database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+# key=value 形式（密码含 @ 等特殊字符时无需转义，推荐）：
+database_url: 'host=204.1.2.3 port=5432 user=isobuilder password=secret dbname=isobuilder sslmode=prefer'
 
-# key=value 形式（二选一）：
-# database_url: host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer
+# ── 构建限制 ──────────────────────────────────────────────────────────
+# 单次上传上限（字节），默认 40 GiB。
+# max_upload_bytes: 42949672960
+# 并发构建数；每个约占用 2×基础 ISO 的工作空间。
+# max_concurrent_builds: 1
+# 构建超时（分钟），默认 180。
+# build_timeout_minutes: 180
+# 保留构建工作目录（排障用，占空间）。
+# keep_work_dir: false
+# 保留产物本地副本（已上传对象存储时）。
+# keep_local_artifact: false
 
-# 留空或不写这个键 = 使用容器内 SQLite（$ISOBUILDER_DATA_DIR/isobuilder.db）。
-# database_url: ""
+# ── 对象存储（初始默认值）─────────────────────────────────────────────
+# 注意：对象存储的最终配置存在数据库 settings 表里（Web「系统配置」页维护），
+# 数据库里的值优先。这里只是首次启动的种子值，通常无需填写。
+# storage:
+#   endpoint: https://oss.example.com
+#   region: us-east-1
+#   bucket: auto-iso
+#   prefix: auto-iso
+#   access_key: ""
+#   secret_key: ""
+#   public_base: ""
+#   presign_ttl_seconds: 86400
+#   path_style: true
+#   insecure_tls: false

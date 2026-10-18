@@ -23,6 +23,24 @@ if [ -f "$CONFIG_FILE" ]; then
     CONFIG_ARG="-c $CONFIG_FILE"
 fi
 
+# 日志目录也来自同一份配置（扁平键，Go 程序自行解析其余项）。
+cfg_get() {
+    [ -f "$CONFIG_FILE" ] || return 1
+    local v
+    v=$(awk -v k="$1" '$0 ~ "^[[:space:]]*" k "[[:space:]]*:" {
+        sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", ""); print; exit
+    }' "$CONFIG_FILE" 2>/dev/null)
+    v=${v%$'\r'}
+    case "$v" in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
+if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
+
 # ***** USER CODE END *****
 
 # 自己的诊断行写 app-start.log（boot.log 由链首聚合，start.log 由上层 start.sh 写——

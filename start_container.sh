@@ -41,16 +41,37 @@ curl -s http://storage.jd.local/tigagent/hufu_new_install.sh | bash -s
 # ┃ 【工程段】应用专属：数据/日志目录。换项目改这段                    ┃
 # ┃ （/export 是 jdos 本地盘；只有可写目录要给 admin）                ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+# 配置文件：与 bin/start.sh 用同一个（默认 /home/export/App/cfg/config.yaml）。
+# 只解析扁平的顶层键，供 shell 侧使用——Go 程序自己用 -c 读同一份文件。
+CONFIG_FILE="${ISOBUILDER_CONFIG:-/home/export/App/cfg/config.yaml}"
+cfg_get() {
+    [ -f "$CONFIG_FILE" ] || return 1
+    local v
+    v=$(awk -v k="$1" '$0 ~ "^[[:space:]]*" k "[[:space:]]*:" {
+        sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", ""); print; exit
+    }' "$CONFIG_FILE" 2>/dev/null)
+    v=${v%$'\r'}
+    case "$v" in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+
 # 数据目录：NFS 由平台挂载到 /opt/isobuilder/data（jdos_fstab），
 # 这里只补子目录；目录本身不存在时说明挂载没配好，mkdir 会落到本地盘。
-DATA_DIR=/opt/isobuilder/data
+DATA_DIR="${ISOBUILDER_DATA_DIR:-/opt/isobuilder/data}"
+LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
+if v=$(cfg_get data_dir); then DATA_DIR=$v; fi
+if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
 mkdir -p "$DATA_DIR"/builds "$DATA_DIR"/isos "$DATA_DIR"/work \
          "$DATA_DIR"/artifacts "$DATA_DIR"/uploads \
-         /export/log/isobuilder
-chown -R admin:admin "$DATA_DIR" /export/log/isobuilder
+         "$LOG_DIR"
+chown -R admin:admin "$DATA_DIR" "$LOG_DIR"
 
 # 引导日志：预创建 + chown（root tee -a 建的文件属主是 root，admin 写不进就丢日志）
-BOOT_LOG=/export/log/isobuilder/boot.log
+BOOT_LOG=$LOG_DIR/boot.log
 touch "$BOOT_LOG" && chown admin:admin "$BOOT_LOG" && chmod 0644 "$BOOT_LOG"
 log() { echo "[$(date '+%F %T')] [start_container] $*" | tee -a "$BOOT_LOG"; }
 

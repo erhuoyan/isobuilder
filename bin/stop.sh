@@ -11,7 +11,24 @@ BIN=isobuilder
 # ***** USER CODE END *****
 
 # 自己的诊断行写 app-stop.log（boot.log 由链首 stop.sh 捕获写入）。
-LOG_DIR=/export/log/isobuilder
+# 日志目录从配置文件读（与启动链同一份），缺省 /export/log/isobuilder。
+CONFIG_FILE="${ISOBUILDER_CONFIG:-/home/export/App/cfg/config.yaml}"
+cfg_get() {
+    [ -f "$CONFIG_FILE" ] || return 1
+    local v
+    v=$(awk -v k="$1" '$0 ~ "^[[:space:]]*" k "[[:space:]]*:" {
+        sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", ""); print; exit
+    }' "$CONFIG_FILE" 2>/dev/null)
+    v=${v%$'\r'}
+    case "$v" in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
+if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
 OWN_LOG=$LOG_DIR/app-stop.log
 log() { echo "[$(date '+%F %T')] [bin/stop.sh] $*" | tee -a "$OWN_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [bin/stop.sh] $*"; }
 

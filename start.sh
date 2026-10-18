@@ -6,7 +6,24 @@ set -o pipefail   # 不用 -u：/etc/profile 引用未定义变量会炸（HISTC
 # 本脚本自己的诊断行写 start.log。同一文件绝不允许内外两层都 tee
 # （旧版自己 tee boot.log 又被外层 tee，每行落盘两次）。
 # stdout 继续向上流，boot.log 自然聚合全部输出，每行恰好一份。
-LOG_DIR=/export/log/isobuilder
+# 日志/数据目录从配置文件读（与 bin/start.sh 同一份），环境变量兜底。
+CONFIG_FILE="${ISOBUILDER_CONFIG:-/home/export/App/cfg/config.yaml}"
+cfg_get() {
+    [ -f "$CONFIG_FILE" ] || return 1
+    local v
+    v=$(awk -v k="$1" '$0 ~ "^[[:space:]]*" k "[[:space:]]*:" {
+        sub("^[[:space:]]*" k "[[:space:]]*:[[:space:]]*", ""); print; exit
+    }' "$CONFIG_FILE" 2>/dev/null)
+    v=${v%$'\r'}
+    case "$v" in
+        \"*\") v=${v#\"}; v=${v%\"} ;;
+        \'*\') v=${v#\'}; v=${v%\'} ;;
+    esac
+    [ -n "$v" ] || return 1
+    printf '%s' "$v"
+}
+LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
+if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
 OWN_LOG=$LOG_DIR/start.log
 log() { echo "[$(date '+%F %T')] [start.sh] $*" | tee -a "$OWN_LOG" 2>/dev/null || echo "[$(date '+%F %T')] [start.sh] $*"; }
 
