@@ -81,6 +81,7 @@ func main() {
 		"addr", cfg.Addr,
 		"config_file", *configPath,
 		"data_dir", cfg.DataDir,
+		"database", st.Dialect(),
 		"storage", blob.Kind(),
 		"bucket", blob.Bucket(),
 		"storage_source", effective.Source,

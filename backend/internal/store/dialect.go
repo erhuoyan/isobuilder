@@ -31,6 +31,12 @@ type Store struct {
 // ErrNotFound is returned when a row does not exist.
 var ErrNotFound = errors.New("not found")
 
+// Dialect reports the active backend ("sqlite", "postgres" or "mysql").
+// The startup log prints it so an operator can tell at a glance which
+// database a running process actually uses — an absent database_url is
+// otherwise easy to miss, since the service silently falls back to SQLite.
+func (s *Store) Dialect() string { return s.dialect }
+
 // OpenSQLite opens the embedded database at the given file path.
 func OpenSQLite(path string) (*Store, error) {
 	dsn := "file:" + path + "?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
