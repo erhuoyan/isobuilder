@@ -75,6 +75,12 @@ RUN chmod +x /home/admin/{start,stop,start_container}.sh && \
 # sshd 首跑需生成 host key
 RUN ssh-keygen -A
 
+# jdos 平台在启停流程里会自己 mkdir /export/Logs（日志收集）与 /export/Data。
+# 若 /export 不存在，运行期的 start_container.sh（以 root 跑）会先把它建成
+# root:root，随后平台以 admin 身份 mkdir 就报 Permission denied，
+# 实例停止失败并进入 Failed 状态。这里预建并归属 admin，平台与脚本都能写。
+RUN mkdir -p /export/Data /export/Logs && chown -R admin:admin /export
+
 ENV ISOBUILDER_ADDR=:8080 \
     ISOBUILDER_DATA_DIR=/opt/isobuilder/data \
     ISOBUILDER_WEB_DIR=/opt/isobuilder/web \
