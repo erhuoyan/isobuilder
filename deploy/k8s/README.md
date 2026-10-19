@@ -86,7 +86,7 @@ curl -s localhost:8080/api/config | python3 -m json.tool   # tools 为 null/[] �
    正在跑的构建判死。
 2. **共享同一份 `/data`**。两个 Pod 同时挂同一份数据，构建工作目录会互相覆盖。
 
-需要更多吞吐时，提高 `ISOBUILDER_MAX_CONCURRENT_BUILDS`（单 Pod 内并行流水线），
+需要更多吞吐时，提高 `config.yaml` 里的 `max_concurrent_builds`（单 Pod 内并行流水线），
 而不是加副本。容量测算见下。
 
 ## 4. 存储布局与容量
@@ -164,18 +164,18 @@ GitHub Secrets 本身加密存储，轮换密码只需更新 Secret，不动代�
 
 ## 6. 数据库：PostgreSQL 与 SQLite 的切换
 
-应用按 **`-c` 指定的配置文件** 或环境变量决定连接：
+K8s 部署**只用配置文件，不设任何环境变量**：所有配置都写在 Secret 的 `config.yaml`
+键里，挂载成 `/etc/isobuilder/config.yaml`，Deployment 用
+`args: [-c, /etc/isobuilder/config.yaml]` 指定（见 `deployment.yaml`）。
 
-| 情况 | 行为 |
+| `config.yaml` 中的 `database_url` | 行为 |
 |---|---|
-| `-c` 文件里 `database_url` 非空 | 连 PostgreSQL（本部署形态） |
-| 未传 `-c`，`ISOBUILDER_DB_URL` 非空 | 连 PostgreSQL |
-| 两者都空 | 退回容器内 SQLite（`$ISOBUILDER_DATA_DIR/isobuilder.db`） |
+| `postgres://…` 或 `host=…` | 连 PostgreSQL |
+| `mysql://…` 或 `user:pass@tcp(…)` | 连 MySQL |
+| 留空 / 不写 | 退回容器内 SQLite（`<data_dir>/isobuilder.db`） |
 
-K8s 里 DSN 放 Secret 的 `config.yaml` 键，挂载成 `/etc/isobuilder/config.yaml`，
-Deployment 用 `args: [-c, /etc/isobuilder/config.yaml]` 指定（见 `deployment.yaml`）。
 文件缺失或解析失败会直接退出，不会静默回退 SQLite——避免"改完没生效却看着正常"。
-裸机 / 单容器部署（`docker-compose.yml`、`deploy/install.sh`）不传 `-c`，零改动继续用 SQLite。
+裸机 / 单容器部署（`docker-compose.yml`、`deploy/install.sh`）不传 `-c` 时零改动继续用 SQLite。
 
 从旧 SQLite 迁到 PG 时，需要把 6 张表的数据导出再灌入 RDS（应用不会自动迁移存量数据）。
 
