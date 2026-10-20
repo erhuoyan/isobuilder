@@ -67,6 +67,10 @@ async function loadProject() {
     return;
   }
 
+  // The template gates the whole page on `project`, and the label computeds
+  // read it too — forgetting this assignment left the view blank.
+  project.value = data.project;
+
   form.value = {
     name: data.project.name,
     description: data.project.description,
