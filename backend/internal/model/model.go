@@ -65,6 +65,10 @@ type ISO struct {
 	Remark    string `json:"remark"`
 	Status    string `json:"status"`
 	Source    string `json:"source"`
+	// Path is relative to data_dir (e.g. "isos/<id>-<name>.iso") — never
+	// absolute. data_dir is a deployment setting that changes between hosts and
+	// mount points; storing it inline orphaned every row whenever it moved.
+	// The API still reports an absolute-looking path via store.ISOPath.
 	Path      string `json:"path"`
 	Error     string `json:"error"`
 	CreatedAt string `json:"created_at"`

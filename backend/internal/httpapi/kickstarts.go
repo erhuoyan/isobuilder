@@ -224,6 +224,8 @@ func (s *Server) handleDeleteKickstart(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusInternalServerError, "internal", "删除模板文件失败: "+err.Error())
 			return
 		}
+		// Uploaded templates live in kickstarts/<id>/; drop it once empty.
+		_ = os.Remove(filepath.Dir(k.Path))
 	}
 	if err := s.store.DeleteKickstart(id); err != nil {
 		fail(w, http.StatusInternalServerError, "internal", err.Error())

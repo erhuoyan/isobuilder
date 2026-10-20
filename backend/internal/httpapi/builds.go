@@ -50,8 +50,9 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("基础镜像 %s 当前状态为 %s，请等待校验完成", iso.Filename, iso.Status))
 		return
 	}
-	if _, err := os.Stat(iso.Path); err != nil {
-		fail(w, http.StatusConflict, "iso_missing", "基础镜像文件不在服务器上: "+iso.Path)
+	isoPath := store.ISOPath(s.cfg.DataDir, iso)
+	if _, err := os.Stat(isoPath); err != nil {
+		fail(w, http.StatusConflict, "iso_missing", "基础镜像文件不在服务器上: "+isoPath)
 		return
 	}
 	ks, err := s.store.GetKickstart(p.KickstartID)
@@ -90,7 +91,7 @@ func (s *Server) handleCreateBuild(w http.ResponseWriter, r *http.Request) {
 		StageTotal:  len(model.Stages),
 		Progress:    0,
 		Arch:        p.Arch,
-		IsoPath:     iso.Path,
+		IsoPath:     isoPath,
 		IsoName:     iso.Name,
 		IsoLabel:    p.IsoLabel,
 		KSID:        ks.ID,

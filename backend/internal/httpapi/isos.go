@@ -104,7 +104,10 @@ func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
 
 	isoID := store.NewID()
 	uploadID := store.NewID()
-	path := filepath.Join(s.cfg.IsoDir, isoID+"-"+req.Filename)
+	// Stored relative to data_dir; resolved with store.ISOPath at use time so
+	// moving the data directory never orphans the row.
+	relPath := store.ManagedISORelPath(isoID, req.Filename)
+	path := store.ISOPath(s.cfg.DataDir, model.ISO{Path: relPath})
 
 	iso := model.ISO{
 		ID:        isoID,
@@ -114,11 +117,18 @@ func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
 		SizeBytes: req.SizeBytes,
 		Status:    model.IsoUploading,
 		Source:    model.SourceUploaded,
-		Path:      path,
+		Path:      relPath,
 		CreatedAt: store.Now(),
 	}
 	if err := s.store.CreateISO(iso); err != nil {
 		fail(w, http.StatusInternalServerError, "internal", "创建镜像记录失败: "+err.Error())
+		return
+	}
+	// Managed ISOs live in isos/<id>/; the chunk writer opens the file with
+	// O_CREATE and does not create parents.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		_ = s.store.DeleteISO(isoID)
+		fail(w, http.StatusInternalServerError, "internal", "创建镜像目录失败: "+err.Error())
 		return
 	}
 	u := &upload{
@@ -365,6 +375,12 @@ func (s *Server) registerFromPath(w http.ResponseWriter, req registerRequest) {
 		return
 	}
 
+	relPath, relErr := store.RelISOPath(s.cfg.DataDir, path)
+	if relErr != nil {
+		fail(w, http.StatusBadRequest, "invalid_path", relErr.Error())
+		return
+	}
+
 	iso := model.ISO{
 		ID:        store.NewID(),
 		Name:      isoName(req.Name, filepath.Base(path)),
@@ -374,14 +390,14 @@ func (s *Server) registerFromPath(w http.ResponseWriter, req registerRequest) {
 		SizeBytes: fi.Size(),
 		Status:    model.IsoHashing,
 		Source:    model.SourceRegistered,
-		Path:      path,
+		Path:      relPath,
 		CreatedAt: store.Now(),
 	}
 	if err := s.store.CreateISO(iso); err != nil {
 		fail(w, http.StatusInternalServerError, "internal", "登记镜像失败: "+err.Error())
 		return
 	}
-	go s.hashISO(iso.ID, iso.Path)
+	go s.hashISO(iso.ID, path)
 	writeJSON(w, http.StatusCreated, map[string]any{"iso": iso})
 }
 
@@ -446,15 +462,16 @@ func (s *Server) registerFromS3(w http.ResponseWriter, r *http.Request, req regi
 	}
 
 	filename := path.Base(key)
+	isoID := store.NewID()
 	iso := model.ISO{
-		ID:        store.NewID(),
+		ID:        isoID,
 		Name:      isoName(req.Name, filename),
 		Filename:  filename,
 		Arch:      req.Arch,
 		Remark:    strings.TrimSpace(req.Remark),
 		Status:    model.IsoDownloading,
 		Source:    model.SourceS3,
-		Path:      filepath.Join(s.cfg.IsoDir, store.NewID()+"-"+filename),
+		Path:      store.ManagedISORelPath(isoID, filename),
 		CreatedAt: store.Now(),
 	}
 	if err := s.store.CreateISO(iso); err != nil {
@@ -478,7 +495,8 @@ func (s *Server) fetchISOFromS3(isoID string, cfg config.StorageConfig, key stri
 	defer cancel()
 
 	client := storage.NewS3(cfg)
-	size, err := client.Get(ctx, key, iso.Path, nil)
+	absPath := store.ISOPath(s.cfg.DataDir, iso)
+	size, err := client.Get(ctx, key, absPath, nil)
 	if err != nil {
 		s.log.Error("fetch iso from s3", "iso", isoID, "key", key, "err", err)
 		_ = s.store.FinishISO(isoID, model.IsoError, "", 0, "从对象存储下载失败: "+err.Error())
@@ -486,7 +504,7 @@ func (s *Server) fetchISOFromS3(isoID string, cfg config.StorageConfig, key stri
 	}
 	s.log.Info("fetched iso from s3", "iso", isoID, "key", key, "bytes", size)
 	_ = s.store.FinishISO(isoID, model.IsoHashing, "", size, "")
-	s.hashISO(isoID, iso.Path)
+	s.hashISO(isoID, absPath)
 }
 
 // s3Target is a parsed s3://bucket/key address.
@@ -570,11 +588,17 @@ func (s *Server) handleDeleteISO(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("还有 %d 个项目在使用该镜像，请先删除或改绑这些项目", used))
 		return
 	}
-	if iso.Source == model.SourceUploaded && within(s.cfg.IsoDir, iso.Path) {
-		if err := os.Remove(iso.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	// Uploaded and S3-pulled files are ours to delete; a registered ISO points
+	// at a file the operator put there, so leave it alone.
+	absPath := store.ISOPath(s.cfg.DataDir, iso)
+	managed := iso.Source == model.SourceUploaded || iso.Source == model.SourceS3
+	if managed && within(s.cfg.IsoDir, absPath) {
+		if err := os.Remove(absPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			fail(w, http.StatusInternalServerError, "internal", "删除镜像文件失败: "+err.Error())
 			return
 		}
+		// Managed ISOs live in their own per-id directory; drop it once empty.
+		_ = os.Remove(filepath.Dir(absPath))
 	}
 	if err := s.store.DeleteISO(id); err != nil {
 		fail(w, http.StatusInternalServerError, "internal", err.Error())

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"isobuilder/internal/model"
@@ -591,6 +593,90 @@ func (s *Store) GetSetting(key string) (string, error) {
 		return "", nil
 	}
 	return value, err
+}
+
+// ManagedRelPath is the canonical location for a file the platform itself
+// stores, relative to data_dir: <kind>/<id>/<filename>.
+//
+// The id keeps names unique while the original filename stays intact — the
+// earlier "<id>-<filename>" scheme mangled a readable name for no benefit.
+// Files the operator placed (registered ISOs) are never moved.
+func ManagedRelPath(kind, id, filename string) string {
+	return filepath.ToSlash(filepath.Join(kind, id, filepath.Base(filename)))
+}
+
+// ManagedISORelPath is ManagedRelPath for the ISO library.
+func ManagedISORelPath(id, filename string) string {
+	return ManagedRelPath("isos", id, filename)
+}
+
+// ManagedKickstartRelPath is ManagedRelPath for uploaded kickstart templates.
+func ManagedKickstartRelPath(id, filename string) string {
+	return ManagedRelPath("kickstarts", id, filename)
+}
+
+// ISOPath maps an ISO's stored (data_dir-relative) path to an absolute one.
+// Rows written before this convention hold absolute paths; those are passed
+// through unchanged so an unmigrated database still resolves.
+func ISOPath(dataDir string, iso model.ISO) string {
+	if iso.Path == "" || filepath.IsAbs(iso.Path) {
+		return iso.Path
+	}
+	return filepath.Join(dataDir, filepath.FromSlash(iso.Path))
+}
+
+// NormalizeISOPaths rewrites stored absolute ISO paths into data_dir-relative
+// form. Rows that are already relative, or that point outside dataDir (an ISO
+// registered from elsewhere), are left alone. It is idempotent and cheap: one
+// query, and updates only rows that actually need it.
+func (s *Store) NormalizeISOPaths(dataDir string) (int, error) {
+	rows, err := s.query(`SELECT id, path FROM isos WHERE path <> ''`)
+	if err != nil {
+		return 0, err
+	}
+	type row struct{ id, path string }
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.path); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if filepath.IsAbs(r.path) {
+			pending = append(pending, r)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	n := 0
+	for _, r := range pending {
+		rel, err := RelISOPath(dataDir, r.path)
+		if err != nil {
+			continue // outside data_dir: leave the absolute path, ISOPath passes it through
+		}
+		if _, err := s.exec(`UPDATE isos SET path=? WHERE id=?`, rel, r.id); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// RelISOPath is the inverse: convert a path inside dataDir into the stored
+// form. Returns an error when path escapes dataDir.
+func RelISOPath(dataDir, abs string) (string, error) {
+	rel, err := filepath.Rel(dataDir, abs)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s is outside %s", abs, dataDir)
+	}
+	return filepath.ToSlash(rel), nil
 }
 
 // SetSetting writes a settings row. The upsert syntax is the only statement

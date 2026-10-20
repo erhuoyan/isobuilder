@@ -47,8 +47,9 @@ spec:
             - name: http
               containerPort: 8080
           volumeMounts:
+            # 与裸机部署统一用 /var/lib/isobuilder，一套路径配置走遍所有形态。
             - name: nfs
-              mountPath: /opt/isobuilder/data
+              mountPath: /var/lib/isobuilder
             # 配置文件来自 Secret，只读挂载。
             - name: config
               mountPath: /etc/isobuilder

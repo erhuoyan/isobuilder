@@ -270,7 +270,6 @@ func (m *Manager) injectKickstart(pub *publisher, treeDir string, b model.Build)
 		}
 	}
 
-
 	// A project-level post script is appended as an independent %post section.
 	// The script body is base64-encoded so no character in it (%, quotes,
 	// heredocs of its own) can break the kickstart syntax. It runs after every

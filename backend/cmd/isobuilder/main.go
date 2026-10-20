@@ -47,6 +47,14 @@ func main() {
 	}
 	defer st.Close()
 
+	// ISO paths used to be stored absolute, which orphaned every row whenever
+	// data_dir moved. Rewrite them once at startup; a no-op after the first run.
+	if n, err := st.NormalizeISOPaths(cfg.DataDir); err != nil {
+		logger.Warn("规范化镜像路径失败", "err", err)
+	} else if n > 0 {
+		logger.Info("已将镜像路径改为相对于 data_dir", "count", n)
+	}
+
 	// The artifact backend is resolved from the database first, so settings
 	// edited in the UI survive a restart; the environment provides the default.
 	// The switcher lets a settings change take effect without a restart.
