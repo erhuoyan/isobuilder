@@ -130,6 +130,14 @@ func (s *Server) handleListBuilds(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, "internal", "查询构建失败: "+err.Error())
 		return
 	}
+	// The stored log_bytes column is never written, so without this the list
+	// view reported "0 B" for every build, finished ones included. One stat per
+	// row is cheap and matches what handleGetBuild already does.
+	for i := range list {
+		if _, size, ok := s.manager.LogFile(list[i].ID); ok {
+			list[i].LogBytes = size
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"builds": list})
 }
 

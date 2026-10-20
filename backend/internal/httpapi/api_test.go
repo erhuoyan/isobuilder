@@ -22,6 +22,9 @@ type stubManager struct {
 	mu       sync.Mutex
 	enqueued []model.Build
 	backend  storage.Backend
+	// logSizes lets a test pretend a build's log file has N bytes; missing
+	// entries behave as "no log file".
+	logSizes map[string]int64
 }
 
 func managerStub(t *testing.T, cfg config.Config, st *store.Store) *stubManager {
@@ -38,7 +41,15 @@ func (m *stubManager) Enqueue(b model.Build) error {
 
 func (m *stubManager) Cancel(string) bool { return true }
 
-func (m *stubManager) LogFile(string) (string, int64, bool) { return "", 0, false }
+func (m *stubManager) LogFile(buildID string) (string, int64, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	size, ok := m.logSizes[buildID]
+	if !ok {
+		return "", 0, false
+	}
+	return "/dev/null", size, true
+}
 
 func (m *stubManager) Subscribe(string) (<-chan buildlog.Line, func(), bool) {
 	return nil, func() {}, false
