@@ -1,5 +1,13 @@
 name: isobuilder
 
+# 通用单容器部署（从源码构建）。全部运行时配置来自挂载的 config.yaml，
+# 由 -c 指定；只有数据库凭据可以用环境变量注入。
+#
+#   cp config.local.yaml.example config.local.yaml   # 按需修改
+#   docker compose up -d
+#
+# 对象存储既可以在 config.yaml 里写（首次种子值），也可以在 Web「系统配置」
+# 页维护——后者的值存在数据库里，优先级更高。
 services:
   isobuilder:
     build:
@@ -9,36 +17,15 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    command: ["-c", "/etc/isobuilder/config.yaml"]
+    environment:
+      # 只有数据库凭据走环境变量，便于把密码从配置文件里剥离。
+      # config.yaml 里若写了 database_url，以配置文件为准。
+      ISOBUILDER_DB_URL: ${ISOBUILDER_DB_URL:-}
     volumes:
       - isobuilder-data:/opt/isobuilder/data
-    environment:
-      # ── 数据库 ────────────────────────────────────────────────────────────
-      # 留空 = 用容器内 SQLite（/opt/isobuilder/data/isobuilder.db，单机部署零依赖）。
-      # 填写 PostgreSQL 连接串则改用云 RDS（K8s / 多环境推荐）。
-      #   postgres://user:pass@host:5432/isobuilder?sslmode=prefer
-      ISOBUILDER_DB_URL: ${ISOBUILDER_DB_URL:-}
-      # ── 对象存储（S3 兼容：MinIO / 京东云 OSS / 阿里云 OSS / Ceph RGW）──────────
-      # 不配 bucket 时产物留在本容器 /opt/isobuilder/data/artifacts，由后端直传下载。
-      ISOBUILDER_S3_ENDPOINT: ${ISOBUILDER_S3_ENDPOINT:-}
-      ISOBUILDER_S3_REGION: ${ISOBUILDER_S3_REGION:-us-east-1}
-      ISOBUILDER_S3_BUCKET: ${ISOBUILDER_S3_BUCKET:-}
-      ISOBUILDER_S3_PREFIX: ${ISOBUILDER_S3_PREFIX:-auto-iso}
-      ISOBUILDER_S3_ACCESS_KEY: ${ISOBUILDER_S3_ACCESS_KEY:-}
-      ISOBUILDER_S3_SECRET_KEY: ${ISOBUILDER_S3_SECRET_KEY:-}
-      # 子路径风格：MinIO/私有对象存储必须为 true；AWS S3 用虚拟主机风格时设 false
-      ISOBUILDER_S3_PATH_STYLE: ${ISOBUILDER_S3_PATH_STYLE:-true}
-      ISOBUILDER_S3_INSECURE_TLS: ${ISOBUILDER_S3_INSECURE_TLS:-false}
-      # 填了它就用公共基地址拼 URL（不再做预签名），例如 https://cdn.example.com/auto-iso
-      ISOBUILDER_S3_PUBLIC_BASE: ${ISOBUILDER_S3_PUBLIC_BASE:-}
-      ISOBUILDER_S3_PRESIGN_TTL_SECONDS: ${ISOBUILDER_S3_PRESIGN_TTL_SECONDS:-86400}
-
-      # ── 服务设置 ──────────────────────────────────────────────────────────
-      ISOBUILDER_AUTH_TOKEN: ${ISOBUILDER_AUTH_TOKEN:-}
-      ISOBUILDER_MAX_CONCURRENT_BUILDS: ${ISOBUILDER_MAX_CONCURRENT_BUILDS:-1}
-      ISOBUILDER_MAX_UPLOAD_BYTES: ${ISOBUILDER_MAX_UPLOAD_BYTES:-42949672960}
-      ISOBUILDER_BUILD_TIMEOUT_MINUTES: ${ISOBUILDER_BUILD_TIMEOUT_MINUTES:-180}
-      ISOBUILDER_KEEP_WORK_DIR: ${ISOBUILDER_KEEP_WORK_DIR:-false}
-      ISOBUILDER_KEEP_LOCAL_ARTIFACT: ${ISOBUILDER_KEEP_LOCAL_ARTIFACT:-false}
+      # 全部运行时设置（addr / data_dir / max_concurrent_builds / storage …）
+      - ./config.local.yaml:/etc/isobuilder/config.yaml:ro
 
 volumes:
   isobuilder-data:

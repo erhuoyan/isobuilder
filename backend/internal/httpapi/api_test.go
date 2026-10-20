@@ -6,6 +6,8 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -56,6 +58,17 @@ func (m *stubManager) Subscribe(string) (<-chan buildlog.Line, func(), bool) {
 }
 
 func (m *stubManager) Storage() storage.Backend { return m.backend }
+
+// testConfig loads configuration from a throwaway file pointing at root, since
+// data_dir no longer has an environment-variable override.
+func testConfig(t *testing.T, root string) (config.Config, error) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("data_dir: "+root+"\n"), 0o600); err != nil {
+		t.Fatalf("write test config: %v", err)
+	}
+	return config.Load(path)
+}
 
 func get(t *testing.T, url string) *http.Response {
 	t.Helper()

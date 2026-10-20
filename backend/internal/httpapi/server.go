@@ -268,7 +268,7 @@ const codeSuccess = "200"
 
 func fail(w http.ResponseWriter, status int, code, message string, details ...any) {
 	body := envelope{
-		Code: code,
+		Code:    code,
 		Message: message,
 		Data:    map[string]any{},
 	}

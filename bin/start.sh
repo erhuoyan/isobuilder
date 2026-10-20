@@ -9,14 +9,8 @@ APP_HOME=/opt/isobuilder
 BIN=isobuilder
 LOG_DIR=/export/log/isobuilder
 
-export ISOBUILDER_ADDR="${ISOBUILDER_ADDR:-:8080}"
-export ISOBUILDER_DATA_DIR="${ISOBUILDER_DATA_DIR:-/opt/isobuilder/data}"
-export ISOBUILDER_WEB_DIR="${ISOBUILDER_WEB_DIR:-$APP_HOME/web}"
-export ISOBUILDER_BUILTIN_DIR="${ISOBUILDER_BUILTIN_DIR:-$APP_HOME/kickstarts}"
-
-# 配置文件：默认 /home/export/App/cfg/config.yaml，存在即用 -c 传入（无需任何环境变量）；
-# ISOBUILDER_CONFIG 可指向别处。文件里放一个键 database_url 即可。
-# 文件不存在则不带 -c，完全走环境变量，行为与以前一致。
+# 全部运行时设置来自配置文件（-c）。除数据库凭据外，ISOBUILDER_* 环境变量
+# 已不再被程序读取；ISOBUILDER_CONFIG 仅用于改变配置文件路径。
 CONFIG_FILE="${ISOBUILDER_CONFIG:-/home/export/App/cfg/config.yaml}"
 CONFIG_ARG=""
 if [ -f "$CONFIG_FILE" ]; then
@@ -51,11 +45,13 @@ log() { echo "[$(date '+%F %T')] [bin/start.sh] $*" | tee -a "$OWN_LOG" 2>/dev/n
 log "===== 真实 start.sh begin ====="
 log "user=$(id -un) uid=$(id -u)"
 log "APP_HOME=$APP_HOME BIN=$BIN LOG_DIR=$LOG_DIR"
-log "ADDR=$ISOBUILDER_ADDR DATA_DIR=$ISOBUILDER_DATA_DIR"
-log "DB_URL 注入: $([ -n "$ISOBUILDER_DB_URL" ] && echo 是 || echo 否)"
+ADDR=$(cfg_get addr) || ADDR=":8080(默认)"
+DATA_DIR=$(cfg_get data_dir) || DATA_DIR="/opt/isobuilder/data(默认)"
+log "配置文件: $CONFIG_FILE（$([ -n "$CONFIG_ARG" ] && echo '已启用 -c' || echo '不存在，全部用默认值')）"
+log "配置值: addr=$ADDR data_dir=$DATA_DIR"
+log "env DB_URL 注入: $([ -n "$ISOBUILDER_DB_URL" ] && echo 是 || echo 否)"
 DB_HOST=$(printf '%s' "${ISOBUILDER_DB_URL:-}" | sed -n 's#.*@\([^:/?:]*\).*#\1#p')
-log "DB_URL host: ${DB_HOST:-未设置(用SQLite)}"
-log "配置文件: $CONFIG_FILE（$([ -n "$CONFIG_ARG" ] && echo '已启用 -c' || echo '不存在，走环境变量')）"
+log "DB_URL host: ${DB_HOST:-见配置文件 database_url（都为空则用 SQLite）}"
 
 mkdir -p "$LOG_DIR" 2>&1 | while read -r l; do log "mkdir: $l"; done || log "mkdir $LOG_DIR 失败 rc=$?"
 

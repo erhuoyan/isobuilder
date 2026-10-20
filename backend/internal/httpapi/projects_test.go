@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	"isobuilder/internal/config"
 	"isobuilder/internal/hosts"
 	"isobuilder/internal/model"
 	"isobuilder/internal/storage"
@@ -23,8 +22,7 @@ import (
 func newTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
 	root := t.TempDir()
-	t.Setenv("ISOBUILDER_DATA_DIR", root)
-	cfg, err := config.Load("")
+	cfg, err := testConfig(t, root)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

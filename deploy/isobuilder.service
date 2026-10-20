@@ -14,15 +14,15 @@ Type=simple
 # 它只写 /var/lib/isobuilder，不做别的系统改动；需要收权时加两行即可：
 #   User=isobuilder / Group=isobuilder   （并 chown -R isobuilder:isobuilder /var/lib/isobuilder）
 
-# 环境变量只是「首次启动的默认值」。对象存储、并发数等都能在 Web 的
-# 「系统配置」里改，改完即生效，不需要动这个文件。
+# 全部配置来自 /etc/isobuilder/config.yaml，由 -c 指定；缺失或解析失败会
+# 直接退出，不做静默回退。对象存储等也能在 Web「系统配置」里改（存数据库，
+# 优先级高于文件里的种子值）。
+#
+# /etc/isobuilder/env 只保留数据库凭据（ISOBUILDER_DB_URL），便于把密码从
+# 配置文件中剥离；它在配置文件未设置 database_url 时生效。
 EnvironmentFile=-/etc/isobuilder/env
-Environment=ISOBUILDER_ADDR=:8080
-Environment=ISOBUILDER_DATA_DIR=/var/lib/isobuilder
-Environment=ISOBUILDER_WEB_DIR=/opt/isobuilder/web
-Environment=ISOBUILDER_BUILTIN_DIR=/opt/isobuilder/kickstarts
 
-ExecStart=/opt/isobuilder/isobuilder
+ExecStart=/opt/isobuilder/isobuilder -c /etc/isobuilder/config.yaml
 Restart=on-failure
 RestartSec=3
 

@@ -3,7 +3,7 @@
 # 在仓库根目录执行：./deploy/release.sh [版本号]
 #
 # 产物结构：
-#   isobuilder-0.1.0-linux-amd64.tar.gz
+#   isobuilder-0.1.0-linux-amd64.tar.gz  （含 config.baremetal.yaml / env.example）
 #   ├── isobuilder          静态二进制
 #   ├── web/                前端 SPA（后端同源提供）
 #   ├── kickstarts/         内置 kickstart 模板
@@ -46,6 +46,7 @@ cp "$ROOT"/scripts/*.sh "$STAGE/scripts/"
 install -m 0644 "$ROOT/README.md" "$STAGE/README.md"
 install -m 0755 "$ROOT/deploy/install.sh" "$STAGE/install.sh"
 install -m 0644 "$ROOT/deploy/isobuilder.service" "$STAGE/isobuilder.service"
+install -m 0644 "$ROOT/deploy/config.baremetal.yaml" "$STAGE/config.baremetal.yaml"
 install -m 0600 "$ROOT/deploy/env.example" "$STAGE/env.example"
 
 tar -czf "$STAGE.tar.gz" -C "$OUT" "$(basename "$STAGE")"

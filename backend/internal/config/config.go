@@ -1,11 +1,12 @@
-// Package config loads isobuilder runtime configuration. Defaults come from
-// environment variables; an optional YAML file (selected with -c) overrides
-// them key by key. A deployment can therefore run from a single mounted file
-// with no environment variables at all, while existing env-based setups keep
-// working unchanged.
+// Package config loads isobuilder runtime configuration from a YAML file
+// (selected with -c). Built-in defaults cover a standard container layout, so a
+// bare `isobuilder` with no file still starts.
 //
-// Precedence: config file > environment variable > built-in default.
-// Keys omitted from the file keep their environment/default value.
+// The only environment variable read is ISOBUILDER_DB_URL: database credentials
+// are the one value a deployment usually wants to inject (systemd
+// EnvironmentFile, Kubernetes Secret) rather than write into a file. Everything
+// else has exactly one source — the config file — so there is never a question
+// of which layer won.
 package config
 
 import (
@@ -13,11 +14,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+// Defaults for a standard container layout. Bare-metal installs override
+// data_dir (see deploy/isobuilder.service); the rest usually stay as-is.
+const (
+	defaultAddr       = ":8080"
+	defaultDataDir    = "/opt/isobuilder/data"
+	defaultBuiltinDir = "/opt/isobuilder/kickstarts"
+	defaultWebDir     = "/opt/isobuilder/web"
 )
 
 // Config is the fully resolved runtime configuration.
@@ -39,7 +48,8 @@ type Config struct {
 	BuildDir    string
 	KickDir     string
 	ArtifactDir string
-	// DatabaseURL selects PostgreSQL when non-empty; empty → embedded SQLite at DBPath.
+	// DatabaseURL selects PostgreSQL or MySQL when non-empty; empty → embedded
+	// SQLite at DBPath.
 	DatabaseURL string
 	DBPath      string
 
@@ -70,9 +80,12 @@ type StorageConfig struct {
 func (s StorageConfig) Enabled() bool { return s.Bucket != "" }
 
 // Load resolves runtime configuration. configPath is the YAML file named with
-// -c; "" means environment variables only. A missing or unreadable file is an
-// error, never a silent fallback — that failure mode is exactly what makes a
-// "changed it but nothing happened" deployment hard to diagnose.
+// -c; "" means built-in defaults only. A named but unreadable file is an error,
+// never a silent fallback — "changed it but nothing happened" is exactly the
+// failure mode that is hard to diagnose.
+//
+// ISOBUILDER_DB_URL, when set, overrides database_url from the file: it exists
+// so a secret can be injected without putting it on disk.
 func Load(configPath string) (Config, error) {
 	var fc fileConfig
 	hasFile := false
@@ -87,7 +100,7 @@ func Load(configPath string) (Config, error) {
 		hasFile = true
 	}
 
-	dataDir := env("ISOBUILDER_DATA_DIR", "/opt/isobuilder/data")
+	dataDir := defaultDataDir
 	if hasFile && fc.DataDir != nil && strings.TrimSpace(*fc.DataDir) != "" {
 		dataDir = strings.TrimSpace(*fc.DataDir)
 	}
@@ -100,12 +113,12 @@ func Load(configPath string) (Config, error) {
 	}
 
 	cfg := Config{
-		Addr:      env("ISOBUILDER_ADDR", ":8080"),
+		Addr:      defaultAddr,
 		DataDir:   dataDir,
-		AuthToken: os.Getenv("ISOBUILDER_AUTH_TOKEN"),
+		AuthToken: "",
 
-		BuiltinDir: env("ISOBUILDER_BUILTIN_DIR", "/opt/isobuilder/kickstarts"),
-		WebDir:     env("ISOBUILDER_WEB_DIR", "/opt/isobuilder/web"),
+		BuiltinDir: defaultBuiltinDir,
+		WebDir:     defaultWebDir,
 
 		IsoDir:      filepath.Join(dataDir, "isos"),
 		UploadDir:   filepath.Join(dataDir, "uploads"),
@@ -116,28 +129,26 @@ func Load(configPath string) (Config, error) {
 		DatabaseURL: strings.TrimSpace(os.Getenv("ISOBUILDER_DB_URL")),
 		DBPath:      filepath.Join(dataDir, "isobuilder.db"),
 
-		MaxUploadBytes:      envBytes("ISOBUILDER_MAX_UPLOAD_BYTES", 40<<30),
-		MaxConcurrentBuilds: envInt("ISOBUILDER_MAX_CONCURRENT_BUILDS", 1),
-		KeepWorkDir:         envBool("ISOBUILDER_KEEP_WORK_DIR", false),
-		KeepLocalArtifact:   envBool("ISOBUILDER_KEEP_LOCAL_ARTIFACT", false),
-		BuildTimeout:        time.Duration(envInt("ISOBUILDER_BUILD_TIMEOUT_MINUTES", 180)) * time.Minute,
+		MaxUploadBytes:      40 << 30,
+		MaxConcurrentBuilds: 1,
+		KeepWorkDir:         false,
+		KeepLocalArtifact:   false,
+		BuildTimeout:        180 * time.Minute,
 
 		Storage: StorageConfig{
-			Endpoint:    strings.TrimSpace(os.Getenv("ISOBUILDER_S3_ENDPOINT")),
-			Region:      env("ISOBUILDER_S3_REGION", "us-east-1"),
-			Bucket:      strings.TrimSpace(os.Getenv("ISOBUILDER_S3_BUCKET")),
-			Prefix:      strings.Trim(strings.TrimSpace(os.Getenv("ISOBUILDER_S3_PREFIX")), "/"),
-			AccessKey:   os.Getenv("ISOBUILDER_S3_ACCESS_KEY"),
-			SecretKey:   os.Getenv("ISOBUILDER_S3_SECRET_KEY"),
-			PublicBase:  strings.TrimRight(strings.TrimSpace(os.Getenv("ISOBUILDER_S3_PUBLIC_BASE")), "/"),
-			PresignTTL:  time.Duration(envInt("ISOBUILDER_S3_PRESIGN_TTL_SECONDS", 86400)) * time.Second,
-			PathStyle:   envBool("ISOBUILDER_S3_PATH_STYLE", strings.TrimSpace(os.Getenv("ISOBUILDER_S3_ENDPOINT")) != ""),
-			InsecureTLS: envBool("ISOBUILDER_S3_INSECURE_TLS", false),
+			Region:     "us-east-1",
+			PresignTTL: 24 * time.Hour,
 		},
 	}
 
 	if hasFile {
 		applyFile(fc, &cfg)
+	}
+	// An explicitly configured endpoint almost always means a private,
+	// path-style store (MinIO, Ceph RGW, JD OSS); keep that convenience unless
+	// the file says otherwise.
+	if cfg.Storage.Endpoint != "" && (fc.Storage == nil || fc.Storage.PathStyle == nil) {
+		cfg.Storage.PathStyle = true
 	}
 
 	if cfg.MaxConcurrentBuilds < 1 {
@@ -164,8 +175,8 @@ func Load(configPath string) (Config, error) {
 }
 
 // fileConfig mirrors Config as YAML. Pointer fields tell "key absent in the
-// file" (nil, keep the environment/default) from "key explicitly set" — which
-// matters for booleans and numbers, where the zero value is meaningful.
+// file" (nil, keep the default) from "key explicitly set" — which matters for
+// booleans and numbers, where the zero value is meaningful.
 //
 // The per-directory paths (iso_dir, work_dir, …) are deliberately NOT here:
 // every one of them derives from data_dir, and exposing them invited
@@ -186,9 +197,9 @@ type fileConfig struct {
 	Storage             *fileStorageConfig `yaml:"storage"`
 }
 
-// fileStorageConfig lets object storage be seeded from the file. The database
-// settings row still wins at runtime (see settings.Load); this only replaces
-// the environment as the initial default.
+// fileStorageConfig seeds the object storage target. The database settings row
+// still wins at runtime (see settings.Load); this only provides the initial
+// default, replacing what used to come from environment variables.
 type fileStorageConfig struct {
 	Endpoint          *string `yaml:"endpoint"`
 	Region            *string `yaml:"region"`
@@ -202,9 +213,9 @@ type fileStorageConfig struct {
 	InsecureTLS       *bool   `yaml:"insecure_tls"`
 }
 
-// applyFile copies every key the file actually sets over the environment-
-// derived config. Strings only override when non-empty, so an explicit empty
-// value cannot accidentally blank out a required path.
+// applyFile copies every key the file actually sets over the defaults.
+// Strings only override when non-empty, so an explicit empty value cannot
+// accidentally blank out a required path.
 func applyFile(fc fileConfig, cfg *Config) {
 	applyStr(fc.Addr, &cfg.Addr)
 	applyStr(fc.AuthToken, &cfg.AuthToken)
@@ -258,50 +269,5 @@ func applyInt(src *int, dst *int) {
 func applyBool(src *bool, dst *bool) {
 	if src != nil {
 		*dst = *src
-	}
-}
-
-func env(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return def
-}
-
-func envInt(key string, def int) int {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-func envBytes(key string, def int64) int64 {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return def
-	}
-	n, err := strconv.ParseInt(v, 10, 64)
-	if err != nil || n <= 0 {
-		return def
-	}
-	return n
-}
-
-func envBool(key string, def bool) bool {
-	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
-	switch v {
-	case "":
-		return def
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	default:
-		return def
 	}
 }

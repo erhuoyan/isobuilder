@@ -61,7 +61,7 @@ cfg_get() {
 
 # 数据目录：NFS 由平台挂载到 /opt/isobuilder/data（jdos_fstab），
 # 这里只补子目录；目录本身不存在时说明挂载没配好，mkdir 会落到本地盘。
-DATA_DIR="${ISOBUILDER_DATA_DIR:-/opt/isobuilder/data}"
+DATA_DIR=/opt/isobuilder/data
 LOG_DIR="${ISOBUILDER_LOG_DIR:-/export/log/isobuilder}"
 if v=$(cfg_get data_dir); then DATA_DIR=$v; fi
 if v=$(cfg_get log_dir); then LOG_DIR=$v; fi
@@ -86,8 +86,9 @@ log "user=$(id -un) uid=$(id -u)"
 log "真实脚本是否存在: $([ -f /home/export/App/bin/start.sh ] && echo 是 || echo 否)"
 log "平台入口是否存在: $([ -f /home/admin/start.sh ] && echo 是 || echo 否)"
 log "admin 用户: $(id admin 2>&1 | head -c 120)"
-log "env DB_URL 设置: $([ -n "$ISOBUILDER_DB_URL" ] && echo 已注入 || echo 空)"
-log "env DATA_DIR=${ISOBUILDER_DATA_DIR:-/data(默认)}"
+log "配置文件: $CONFIG_FILE"
+log "配置值: data_dir=$DATA_DIR log_dir=$LOG_DIR"
+log "env DB_URL 注入: $([ -n "$ISOBUILDER_DB_URL" ] && echo 是 || echo 否)"
 
 log "准备调用平台入口 /home/admin/start.sh"
 su -m admin -c "bash /home/admin/start.sh" 2>&1 | tee -a "$BOOT_LOG"

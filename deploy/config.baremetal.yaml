@@ -1,0 +1,62 @@
+# isobuilder 裸机部署配置（/etc/isobuilder/config.yaml，由 -c 指定）
+#
+# 这是裸机部署的唯一配置来源。改完执行：
+#   systemctl restart isobuilder
+#
+# 优先级：本文件 > 内置默认值。数据库凭据例外——若本文件没写 database_url，
+# 会读 /etc/isobuilder/env 的 ISOBUILDER_DB_URL（便于把密码单独设成 0600）。
+#
+# 值里若含 # 或以 : 开头，必须用引号包起来（YAML 语法）。
+
+# ── 服务 ──────────────────────────────────────────────────────────────
+# 监听地址，Go 的 "host:port" 形式。冒号前留空 = 绑定所有网卡。
+# 想只允许本机访问就写 "127.0.0.1:8080"。
+addr: ":8080"
+
+# ── 目录 ──────────────────────────────────────────────────────────────
+# 数据根目录：isos/ uploads/ work/ builds/ kickstarts/ artifacts/ 与
+# isobuilder.db 全部由它派生，不单独配置。
+#
+# 若把数据盘挂在别处（例如 /data），推荐用 bind mount 让这个路径继续有效：
+#   /data/isobuilder  /var/lib/isobuilder  none  bind,nofail  0 0
+data_dir: /var/lib/isobuilder
+
+# ── 数据库 ────────────────────────────────────────────────────────────
+# 留空 = 本机 SQLite（<data_dir>/isobuilder.db），单机部署推荐。
+# 外部 PostgreSQL / MySQL 的写法：
+#   database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+#   database_url: 'host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer'
+#   database_url: 'mysql://user:pass@host:3306/isobuilder'
+# 也可以完全留空，把连接串放进 /etc/isobuilder/env 的 ISOBUILDER_DB_URL。
+# database_url: ""
+
+# ── 鉴权 ──────────────────────────────────────────────────────────────
+# 设置后 API 需要 Authorization: Bearer <token>；留空 = 不鉴权。
+# auth_token: ""
+
+# ── 构建 ──────────────────────────────────────────────────────────────
+# 并发构建数；每个构建峰值约占 2×基础 ISO 的空间与 I/O。
+# max_concurrent_builds: 1
+# 单文件上传上限（字节），默认 40 GiB。
+# max_upload_bytes: 42949672960
+# 单个构建超时（分钟），默认 180。
+# build_timeout_minutes: 180
+# 保留构建工作目录（排障用，占空间）。
+# keep_work_dir: false
+# 保留产物本地副本（已上传对象存储时）。
+# keep_local_artifact: false
+
+# ── 对象存储（种子值）─────────────────────────────────────────────────
+# 注意：对象存储的最终配置存在数据库 settings 表（Web「系统配置」页维护），
+# 数据库里的值优先。这里只是首次启动的种子值，通常无需填写。
+# storage:
+#   endpoint: https://oss.example.com
+#   region: us-east-1
+#   bucket: auto-iso
+#   prefix: auto-iso
+#   access_key: ""
+#   secret_key: ""
+#   public_base: ""
+#   presign_ttl_seconds: 86400
+#   path_style: true
+#   insecure_tls: false

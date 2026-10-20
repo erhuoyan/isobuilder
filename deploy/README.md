@@ -14,7 +14,8 @@
 ```
 
 包内容：静态二进制 `isobuilder`、前端 `web/`、内置模板 `kickstarts/`、单机应急脚本 `scripts/`、
-`install.sh`、`isobuilder.service`、`env.example`。
+`install.sh`、`isobuilder.service`、`config.baremetal.yaml`（安装时复制为
+`/etc/isobuilder/config.yaml`）、`env.example`（只放可选的数据库凭据）。
 
 前端默认**每次重新构建**（避免把旧产物打进包）；确认产物最新时用 `SKIP_WEB=1` 跳过，省约 1 分钟。
 
@@ -44,7 +45,8 @@ tar xzf /root/isobuilder-0.1.0-linux-amd64.tar.gz -C /root/isobuilder-rel --stri
 | 装文件 | 二进制/前端/模板 → `/opt/isobuilder` |
 | 建数据目录 | `/var/lib/isobuilder`（镜像、日志、产物、SQLite） |
 | 装单元 | `/etc/systemd/system/isobuilder.service`，enable + restart |
-| 首次默认值 | `/etc/isobuilder/env`（0600），默认只有 `ISOBUILDER_ADDR` |
+| 配置文件 | `/etc/isobuilder/config.yaml`，全部运行时设置（由 `-c` 传入） |
+| 数据库凭据 | `/etc/isobuilder/env`（0600），只放可选的 `ISOBUILDER_DB_URL` |
 | 端口选择 | 全新安装用 `:8080`，被占用自动挑 `8081-8099`；**升级沿用已配置端口** |
 
 部署后的目录：
@@ -65,7 +67,7 @@ tar xzf /root/isobuilder-0.1.0-linux-amd64.tar.gz -C /root/isobuilder-rel --stri
 | `$DATA_DIR/work` | 解包整棵树 + 产物 | **单个构建结束后清理** | 峰值 ≈ 2× 基础 ISO |
 | `$DATA_DIR/artifacts` | 已注册的产物 | 上传对象存储后**立即删除本地副本** | 上传后 0；`storage=local` 时保留 |
 
-所以本地落盘的只有基础镜像和正在构建的那一份。`ISOBUILDER_KEEP_LOCAL_ARTIFACT=true` 时保留本地副本便于复看。
+所以本地落盘的只有基础镜像和正在构建的那一份。`keep_local_artifact: true` 时保留本地副本便于复看。
 
 构建**开始前**会做磁盘预检，磁盘不够**不会在写一半时失败**：
 
@@ -129,12 +131,12 @@ curl -X PUT http://localhost:8081/api/settings -H 'Content-Type: application/jso
 }'
 ```
 
-- 配置存 SQLite 的 `settings` 表，**重启不丢**；环境变量只是首次默认值。
-- `GET /api/settings` 的 `source`：`db`＝来自配置页，`env`＝仅来自环境变量。
+- 对象存储配置存数据库 `settings` 表，**重启不丢**；配置文件里的 `storage:` 只是首次种子值。
+- `GET /api/settings` 的 `source`：`db`＝来自配置页，`env`＝仅来自配置文件的种子值。
 - 密钥只写不读：接口只返回 `access_key_set` / `secret_key_set`。
 - `bucket` 留空并保存 → 关闭对象存储，产物留在 `/var/lib/isobuilder/artifacts`，由后端直传下载。
 
-服务默认**不开认证**。要开：在 `/etc/isobuilder/env` 里设 `ISOBUILDER_AUTH_TOKEN=xxx` 并
+服务默认**不开认证**。要开：在 `/etc/isobuilder/config.yaml` 里设 `auth_token: "xxx"` 并
 `systemctl restart isobuilder`；之后 API 需要 `Authorization: Bearer xxx`，界面会出现登录入口。
 
 ---
@@ -211,28 +213,32 @@ curl -sL -o out.iso "$B/api/artifacts/<artifact_id>/download"
 | 重启 | `systemctl restart isobuilder`（重启时未完成的构建会被标记为失败，不会假死） |
 | 升级 | 重复 1.2（端口沿用、数据保留） |
 | 回滚 | 解压上一版包同样执行 `install.sh --from-release` |
-| 改端口 | 改 `/etc/isobuilder/env` 的 `ISOBUILDER_ADDR` → `systemctl restart isobuilder` |
+| 改端口 | 改 `/etc/isobuilder/config.yaml` 的 `addr` → `systemctl restart isobuilder` |
 | 备份 | 停服后备份 `/var/lib/isobuilder/isobuilder.db`（配置、项目、构建历史全在里面）+ `/var/lib/isobuilder/isos` |
 | 清理产物 | 界面删项目/镜像，或手工清理 `/var/lib/isobuilder/{work,artifacts,builds}` |
 | 磁盘检查 | `df -h /var/lib/isobuilder`（单次构建峰值约 **2× 基础 ISO**） |
 
-`/etc/isobuilder/env` 常用项（改完都要 restart）：
+`/etc/isobuilder/config.yaml` 常用项（改完都要 restart）：
 
-```ini
-ISOBUILDER_ADDR=:8081
-ISOBUILDER_AUTH_TOKEN=              # 留空＝不开认证
-ISOBUILDER_DB_URL=                  # 留空＝用本机 SQLite；填 PostgreSQL 连接串则改用外部库
-ISOBUILDER_MAX_CONCURRENT_BUILDS=1  # 并发构建数，每个都要 2×ISO 空间
-ISOBUILDER_BUILD_TIMEOUT_MINUTES=180
-ISOBUILDER_KEEP_WORK_DIR=false      # true 时保留中间目录，排障用（会占大量空间）
+```yaml
+addr: ":8081"
+# auth_token: ""                    # 留空＝不开认证
+# database_url: ""                  # 留空＝用本机 SQLite
+max_concurrent_builds: 1            # 并发构建数，每个都要 2×ISO 空间
+build_timeout_minutes: 180
+keep_work_dir: false                # true 时保留中间目录，排障用（会占大量空间）
 ```
 
-SQLite 是裸机默认存储（`/var/lib/isobuilder/isobuilder.db`，单文件、零外部依赖）。
-要改用 PostgreSQL（例如与 K8s 部署共用同一个云 RDS）时，填两种写法之一并 restart：
+数据库密码可以不放这里，而是写进 `/etc/isobuilder/env`（0600）的
+`ISOBUILDER_DB_URL`：配置文件没写 `database_url` 时它才生效。
 
-```ini
-ISOBUILDER_DB_URL=postgres://user:pass@host:5432/isobuilder?sslmode=prefer
-ISOBUILDER_DB_URL=host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer
+SQLite 是裸机默认存储（`/var/lib/isobuilder/isobuilder.db`，单文件、零外部依赖）。
+要改用外部数据库（例如与 K8s 部署共用同一个云 RDS），两种写法任选并 restart：
+
+```yaml
+database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+database_url: 'host=<host> port=5432 user=<user> password=<pass> dbname=isobuilder sslmode=prefer'
+database_url: 'mysql://user:pass@host:3306/isobuilder'
 ```
 
 切换后端**不会自动搬迁存量数据**；已有 SQLite 数据需手工导出后灌入 PostgreSQL。
@@ -244,16 +250,16 @@ Kubernetes 部署形态见 [`k8s/README.md`](k8s/README.md)。
 
 | 现象 | 原因 / 处理 |
 |---|---|
-| 启动即退出，日志 `bind: address already in use` | 端口被占。改 `ISOBUILDER_ADDR` 或释放端口 |
+| 启动即退出，日志 `bind: address already in use` | 端口被占。改 config.yaml 的 `addr` 或释放端口 |
 | 登记镜像报 `path_unreadable` | 只在改成非 root 运行时可能出现。`chown <服务用户> <文件>` 或 `chmod 0644 <文件>` |
-| 构建报 `磁盘空间不足` | 工作目录能写下的空间不够 2× 基础镜像。清理 `$DATA_DIR/work` 与旧产物，或缩小并发 (`ISOBUILDER_MAX_CONCURRENT_BUILDS`) |
+| 构建报 `磁盘空间不足` | 工作目录能写下的空间不够 2× 基础镜像。清理 `$DATA_DIR/work` 与旧产物，或缩小并发 (`max_concurrent_builds`) |
 | 触发构建报 `missing_tools` | 缺 `xorriso`/`isohybrid`/`implantisomd5`。`dnf install xorriso syslinux syslinux-nonlinux isomd5sum` |
 | 构建报「找不到 EFI 启动镜像 efiboot.img」 | 该 ISO 不是受支持的安装镜像（缺 EFI 段或结构特殊） |
 | 构建报 `xorriso 退出异常: exit status 32` | 见构建日志里那条 xorriso 命令行与 `libisofs` 提示；常见是基础 ISO 结构不完整 |
 | 构建卡在某段不动 | `journalctl -u isobuilder -f` 看子进程输出；日志页也会实时刷 |
 | 产物上传失败 | 系统配置里点保存做一次探活；产物已保留在 `/var/lib/isobuilder/artifacts`，可手工上传 |
 | 界面日志区「已断开」 | SSE 断了会自动带 offset 重连；长时间不恢复查反向代理是否禁用缓冲（本服务已发 `X-Accel-Buffering: no`） |
-| 磁盘涨得快 | 正常：工作目录 = 解包后的整棵 ISO 树 + 产物。构建结束会清理；`KEEP_WORK_DIR=true` 时不清理 |
+| 磁盘涨得快 | 正常：工作目录 = 解包后的整棵 ISO 树 + 产物。构建结束会清理；`keep_work_dir: true` 时不清理 |
 
 ---
 

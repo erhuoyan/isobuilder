@@ -22,8 +22,11 @@ import (
 func newTestManager(t *testing.T) (*Manager, *store.Store) {
 	t.Helper()
 	root := t.TempDir()
-	t.Setenv("ISOBUILDER_DATA_DIR", root)
-	cfg, err := config.Load("")
+	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("data_dir: "+root+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}

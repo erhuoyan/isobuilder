@@ -105,18 +105,30 @@ log "安装 systemd 单元"
 # 先停服务：运行中的二进制无法被覆盖（Text file busy 会让 cp 静默失败）
 systemctl stop isobuilder 2>/dev/null || true
 install -m 0644 "$(dirname "$0")/isobuilder.service" "$SERVICE"
+
+# 配置文件：全部运行时设置都在这里，由 systemd 传给 isobuilder -c。
+# env 文件只留给数据库凭据（可选），因此权限收紧到 0600。
+CONFIG_FILE="$CONF_DIR/config.yaml"
+if [ ! -f "$CONFIG_FILE" ]; then
+    # 模板里的 data_dir 只是默认值；这里替换成本次安装实际使用的目录
+    # （ISOBUILDER_DATA_DIR 可能指向数据盘，例如 /data/isobuilder）。
+    sed "s|^data_dir: .*|data_dir: ${DATA_DIR}|" \
+        "$(dirname "$0")/config.baremetal.yaml" > "$CONFIG_FILE"
+    chmod 0644 "$CONFIG_FILE"
+    log "已生成 $CONFIG_FILE（data_dir=$DATA_DIR）"
+fi
 if [ ! -f "$CONF_DIR/env" ]; then
     install -m 0600 "$(dirname "$0")/env.example" "$CONF_DIR/env"
-    log "已生成 $CONF_DIR/env（可按需填写；对象存储也可以只在 Web「系统配置」里配）"
+    log "已生成 $CONF_DIR/env（只放数据库连接串；留空则用本机 SQLite）"
 fi
 
-# 端口策略：
-#   - 升级（env 里已有 ISOBUILDER_ADDR）→ 原样沿用，绝不因为「自己在跑」而改端口
+# 端口策略（读写的都是 config.yaml 的 addr）：
+#   - 升级（addr 已存在）→ 原样沿用，绝不因为「自己在跑」而改端口
 #   - 全新安装 → 默认 8080，被别的进程占用时自动挑一个空闲端口
 port=""
-existing_addr="$(grep -E '^ISOBUILDER_ADDR=' "$CONF_DIR/env" 2>/dev/null | tail -1 | cut -d= -f2)"
+existing_addr="$(awk -F: '/^addr:[[:space:]]*/ {gsub(/["'"'"' ]/, "", $2); print $2; exit}' "$CONFIG_FILE" 2>/dev/null)"
 if [ -n "$existing_addr" ]; then
-    port="${existing_addr#:}"
+    port="$existing_addr"
     log "沿用已配置端口 $port（升级不改变监听端口）"
 else
     port=8080
@@ -128,10 +140,10 @@ else
         done
         log "8080 已被占用，改用端口 $port"
     fi
-    if grep -q '^ISOBUILDER_ADDR=' "$CONF_DIR/env" 2>/dev/null; then
-        sed -i "s|^ISOBUILDER_ADDR=.*|ISOBUILDER_ADDR=:${port}|" "$CONF_DIR/env"
+    if grep -q '^addr:' "$CONFIG_FILE" 2>/dev/null; then
+        sed -i "s|^addr:.*|addr: \":${port}\"|" "$CONFIG_FILE"
     else
-        echo "ISOBUILDER_ADDR=:${port}" >> "$CONF_DIR/env"
+        printf 'addr: ":%s"\n' "$port" >> "$CONFIG_FILE"
     fi
 fi
 systemctl daemon-reload
@@ -145,6 +157,8 @@ echo
 log "完成。浏览器打开: http://${ip:-<本机IP>}:${port}"
 echo "  运行身份: root（只写 $DATA_DIR；需要收权见单元文件里的两行注释）"
 echo "  数据目录: $DATA_DIR"
-echo "  配置:     $CONF_DIR/env（首次默认值） + Web「系统配置」（对象存储，改完即生效）"
+echo "  配置:     $CONFIG_FILE（全部运行时设置）"
+echo "  数据库凭据: $CONF_DIR/env（可选，只放 ISOBUILDER_DB_URL）"
+echo "  对象存储: 可在 Web「系统配置」页维护（存数据库，优先级高于配置文件）"
 echo "  日志:     journalctl -u isobuilder -f"
-echo "  端口:     $port（改 $CONF_DIR/env 里的 ISOBUILDER_ADDR，然后 systemctl restart isobuilder）"
+echo "  端口:     $port（改 $CONFIG_FILE 里的 addr，然后 systemctl restart isobuilder）"

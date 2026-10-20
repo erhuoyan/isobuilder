@@ -33,7 +33,7 @@ ssh root@<host> 'mkdir -p /root/rel && tar xzf /root/isobuilder-0.1.0-linux-amd6
 
 安装脚本会：装 `xorriso/syslinux/isomd5sum` → 建 `isobuilder` 用户 → 装到 `/opt/isobuilder` →
 数据放 `/var/lib/isobuilder` → 注册 systemd 单元。默认监听 `:8080`；被占用时自动挑一个空闲端口
-（写进 `/etc/isobuilder/env` 的 `ISOBUILDER_ADDR`）。升级时沿用已配置端口。
+（写进 `/etc/isobuilder/config.yaml` 的 `addr`）。升级时沿用已配置端口。
 
 ```
 systemctl status isobuilder
@@ -49,7 +49,7 @@ journalctl -u isobuilder -f
 # 后端（go ≥ 1.24，依赖 xorriso、isoinfo、isohybrid、implantisomd5）
 cd backend
 go run ./cmd/isobuilder
-# 配置用环境变量，开发目录自动在当前仓库根创建 data/
+# 配置读 YAML（-c），默认数据目录 /opt/isobuilder/data
 
 # 前端（node ≥ 22 + pnpm）
 cd frontend
@@ -145,40 +145,52 @@ curl -X PUT http://<host>:8080/api/settings -H 'Content-Type: application/json' 
               "presign_ttl_seconds":86400,"access_key":"...","secret_key":"..."}}'
 ```
 
-### 配置文件（-c）与环境变量
+### 配置文件（`-c`）
 
-两种配置方式等价，**配置文件优先**，环境变量是兜底：
+所有运行时配置都在一个 YAML 文件里，用 `-c` 指定：
 
 ```bash
-isobuilder -c /path/to/config.yaml
+isobuilder -c /etc/isobuilder/config.yaml
 ```
 
-YAML 里可写运行时参数（`addr`、`data_dir`、`log_dir`、`database_url`、
-`max_concurrent_builds`…），只写需要改的键，未出现的键沿用环境变量/默认值。
-`isos`/`uploads`/`work`/`builds`/`kickstarts`/`artifacts` 都由 `data_dir` 自动派生，
-不单独配置。完整键列表见 [`deploy/config.example.yaml`](deploy/config.example.yaml)。
+```yaml
+addr: ":8080"
+data_dir: /var/lib/isobuilder
+database_url: 'postgres://user:pass@host:5432/isobuilder?sslmode=prefer'
+max_concurrent_builds: 1
+auth_token: ""
+```
 
-> JDOS：把文件放到 `/home/export/App/cfg/config.yaml`，`bin/start.sh` 会自动加 `-c`。
-> K8s：Secret 挂载 + `args: [-c, /etc/isobuilder/config.yaml]`。
-> 文件缺失或解析失败会直接退出，不会静默回退默认值。
+只写需要改的键，未出现的沿用内置默认值。`isos`/`uploads`/`work`/`builds`/
+`kickstarts`/`artifacts` 与 `isobuilder.db` 都由 `data_dir` 自动派生，**不单独配置**。
+完整键列表见 [`deploy/config.example.yaml`](deploy/config.example.yaml)。
 
-### 环境变量（首次默认值 / 服务参数）
+| 部署形态 | 配置文件位置 |
+|---|---|
+| 裸机（systemd） | `/etc/isobuilder/config.yaml` |
+| 容器（compose） | 挂载到 `/etc/isobuilder/config.yaml` |
+| K8s | Secret 的 `config.yaml` 键，挂到 `/etc/isobuilder/config.yaml` |
+| JDOS | `/home/export/App/cfg/config.yaml`（`bin/start.sh` 自动加 `-c`） |
 
-见 `/etc/isobuilder/env` 与 `docker-compose.yml`。最常用的：
+文件缺失或解析失败会**直接退出**，不会静默回退默认值。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `ISOBUILDER_ADDR` | `:8080` | 监听地址 |
-| `ISOBUILDER_DATA_DIR` | `/opt/isobuilder/data` | 镜像/日志/产物/DB 根目录，生产要挂载卷 |
-| `ISOBUILDER_LOG_DIR` | `/export/log/isobuilder` | 启停脚本日志目录（也可写配置文件 `log_dir`） |
-| `ISOBUILDER_DB_URL` | 空 | PostgreSQL / MySQL 连接串；**留空则用内置 SQLite**（`$DATA_DIR/isobuilder.db`）。MySQL 支持 `mysql://user:pass@host:3306/db` 或原生 `user:pass@tcp(host:3306)/db` |
-| `ISOBUILDER_AUTH_TOKEN` | 空 | 设置后 API 需要 `Authorization: Bearer` |
-| `ISOBUILDER_S3_*` | 空 | 对象存储的首次默认值；**推荐改在 Web「系统配置」里维护** |
-| `ISOBUILDER_S3_PUBLIC_BASE` | 空 | 有公共基地址则跳过预签名，直接拼 URL |
-| `ISOBUILDER_S3_PRESIGN_TTL_SECONDS` | `86400` | 预签名 URL 有效期 |
-| `ISOBUILDER_MAX_CONCURRENT_BUILDS` | `1` | 并发构建数（每个构建都占 2×ISO 空间 + IO） |
-| `ISOBUILDER_MAX_UPLOAD_BYTES` | `40GiB` | 单文件上传上限 |
-| `ISOBUILDER_BUILD_TIMEOUT_MINUTES` | `180` | 单个构建超时 |
+### 环境变量（只剩数据库凭据）
+
+除下面这一个，程序不再读取任何 `ISOBUILDER_*` 环境变量：
+
+| 变量 | 说明 |
+|---|---|
+| `ISOBUILDER_DB_URL` | 数据库连接串；**配置文件里的 `database_url` 优先**。留空且文件未写 → 用 SQLite（`<data_dir>/isobuilder.db`）。支持 `postgres://…`、`host=… port=…`、`mysql://…`、`user:pass@tcp(host:3306)/db` |
+
+单独留一条环境变量通道，是为了让密码不必写进配置文件（systemd
+`EnvironmentFile` / K8s Secret 都能注入）。
+
+还有两个只影响启停脚本、与 Go 程序无关的变量：
+
+| 变量 | 说明 |
+|---|---|
+| `ISOBUILDER_CONFIG` | JDOS/裸机脚本用它指定配置文件路径（默认同上的约定位置） |
+| `ISOBUILDER_LOG_DIR` | 启停脚本自己的日志目录（默认 `/export/log/isobuilder`） |
 
 ## 目录结构
 
@@ -201,7 +213,7 @@ isobuilder/
 │   └── internal/
 │       ├── builder/        五段 ISO 流水线（原 repack-iso-*.sh 的原语移植）
 │       ├── buildlog/       按字节偏移断点续读的 SSE 日志流
-│       ├── config/         环境变量解析
+│       ├── config/         YAML 配置解析（默认值 + -c 文件）
 │       ├── hosts/          hosts.yaml 校验（SN 唯一性/MAC/网关同网段等）
 │       ├── httpapi/        REST API + SPA 静态文件
 │       ├── model/          领域模型

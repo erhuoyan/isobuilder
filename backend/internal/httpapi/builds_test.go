@@ -7,7 +7,6 @@ import (
 	"os"
 	"testing"
 
-	"isobuilder/internal/config"
 	"isobuilder/internal/model"
 	"isobuilder/internal/storage"
 	"isobuilder/internal/store"
@@ -19,8 +18,7 @@ import (
 // included. This pins that behaviour.
 func TestListBuildsFillsLogBytes(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("ISOBUILDER_DATA_DIR", root)
-	cfg, err := config.Load("")
+	cfg, err := testConfig(t, root)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
