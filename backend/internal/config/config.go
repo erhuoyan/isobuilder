@@ -43,7 +43,6 @@ type Config struct {
 	WebDir     string // directory holding the built admin SPA
 
 	IsoDir      string
-	UploadDir   string
 	WorkDir     string
 	BuildDir    string
 	KickDir     string
@@ -121,7 +120,6 @@ func Load(configPath string) (Config, error) {
 		WebDir:     defaultWebDir,
 
 		IsoDir:      filepath.Join(dataDir, "isos"),
-		UploadDir:   filepath.Join(dataDir, "uploads"),
 		WorkDir:     filepath.Join(dataDir, "work"),
 		BuildDir:    filepath.Join(dataDir, "builds"),
 		KickDir:     filepath.Join(dataDir, "kickstarts"),
@@ -166,7 +164,7 @@ func Load(configPath string) (Config, error) {
 		}
 	}
 
-	for _, dir := range []string{cfg.IsoDir, cfg.UploadDir, cfg.WorkDir, cfg.BuildDir, cfg.KickDir, cfg.ArtifactDir} {
+	for _, dir := range []string{cfg.IsoDir, cfg.WorkDir, cfg.BuildDir, cfg.KickDir, cfg.ArtifactDir} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return Config{}, fmt.Errorf("create %s: %w", dir, err)
 		}

@@ -9,18 +9,18 @@ const (
 
 // ISO status values.
 const (
-	IsoUploading   = "uploading"
 	IsoDownloading = "downloading"
 	IsoHashing     = "hashing"
 	IsoReady       = "ready"
 	IsoError       = "error"
 )
 
-// ISO sources.
+// ISO sources. Images enter the library either from the server's own disk
+// (registered) or by the server downloading a link (url); the browser never
+// uploads an image.
 const (
-	SourceUploaded   = "uploaded"
 	SourceRegistered = "registered"
-	SourceS3         = "s3"
+	SourceURL        = "url"
 )
 
 // Build status values.

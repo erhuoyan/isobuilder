@@ -60,7 +60,6 @@ func TestLoadEverythingFromFile(t *testing.T) {
 	// relocate all of them, including the SQLite file.
 	for name, got := range map[string]string{
 		"isos":       cfg.IsoDir,
-		"uploads":    cfg.UploadDir,
 		"work":       cfg.WorkDir,
 		"builds":     cfg.BuildDir,
 		"kickstarts": cfg.KickDir,

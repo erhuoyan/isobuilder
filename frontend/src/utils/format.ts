@@ -1,69 +1,63 @@
-import dayjs from 'dayjs';
+/** 展示用的格式化工具。 */
 
-/** the placeholder of an unknown value */
-export const EMPTY_VALUE = '—';
+export function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '—';
 
-/**
- * Format a byte size
- *
- * @param bytes the number of bytes
- * @param digits the number of decimals
- */
-export function formatBytes(bytes?: number | null, digits = 1) {
-  if (bytes === null || bytes === undefined || Number.isNaN(bytes)) return EMPTY_VALUE;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
 
-  if (bytes === 0) return '0 B';
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
 
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / 1024 ** index;
-
-  return `${value.toFixed(index === 0 ? 0 : digits)} ${units[index]}`;
+  return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
 
-/** Format a byte size per second, used by the upload speed */
-export function formatSpeed(bytesPerSecond: number) {
-  if (!bytesPerSecond || bytesPerSecond < 0) return '0 B/s';
+export function formatDateTime(value: string): string {
+  if (!value) return '—';
 
-  return `${formatBytes(bytesPerSecond, 1)}/s`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-/** Format a RFC3339 timestamp in the local timezone */
-export function formatDateTime(value?: string | null, template = 'YYYY-MM-DD HH:mm:ss') {
-  if (!value) return EMPTY_VALUE;
+/** 「3 分钟前」这类相对时间，用于轮询中的构建。 */
+export function formatRelative(value: string): string {
+  if (!value) return '—';
 
-  const time = dayjs(value);
+  const diff = Date.now() - new Date(value).getTime();
+  if (Number.isNaN(diff)) return value;
+  if (diff < 0) return '刚刚';
 
-  return time.isValid() ? time.format(template) : EMPTY_VALUE;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+
+  return `${Math.floor(hours / 24)} 天前`;
 }
 
-/** Format the duration between two RFC3339 timestamps */
-export function formatDuration(start?: string | null, end?: string | null) {
-  if (!start) return EMPTY_VALUE;
+/** 构建耗时：未结束的不算。 */
+export function formatDuration(startedAt: string, finishedAt: string): string {
+  if (!startedAt || !finishedAt) return '—';
 
-  const from = dayjs(start);
-  const to = end ? dayjs(end) : dayjs();
+  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+  if (Number.isNaN(ms) || ms < 0) return '—';
 
-  if (!from.isValid() || !to.isValid()) return EMPTY_VALUE;
-
-  const seconds = Math.max(0, to.diff(from, 'second'));
-
+  const seconds = Math.floor(ms / 1000);
   if (seconds < 60) return `${seconds} 秒`;
 
   const minutes = Math.floor(seconds / 60);
-  const restSeconds = seconds % 60;
+  if (minutes < 60) return `${minutes} 分 ${seconds % 60} 秒`;
 
-  if (minutes < 60) return restSeconds ? `${minutes} 分 ${restSeconds} 秒` : `${minutes} 分`;
-
-  const hours = Math.floor(minutes / 60);
-  const restMinutes = minutes % 60;
-
-  return restMinutes ? `${hours} 小时 ${restMinutes} 分` : `${hours} 小时`;
-}
-
-/** Format a number with thousand separators */
-export function formatNumber(value?: number | null) {
-  if (value === null || value === undefined) return EMPTY_VALUE;
-
-  return value.toLocaleString('zh-CN');
+  return `${Math.floor(minutes / 60)} 时 ${minutes % 60} 分`;
 }

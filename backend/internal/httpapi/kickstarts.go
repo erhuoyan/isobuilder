@@ -39,6 +39,46 @@ func (s *Server) handleListKickstarts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"kickstarts": out})
 }
 
+// storeKickstart persists a template body under kickstarts/<id>/<filename>, so
+// the file keeps its original name instead of being prefixed with the id.
+func (s *Server) storeKickstart(body, name, arch string) (model.Kickstart, *apiErr) {
+	if strings.TrimSpace(body) == "" {
+		return model.Kickstart{}, newAPIErr(http.StatusBadRequest, "empty_kickstart", "kickstart 内容为空")
+	}
+	if !strings.Contains(body, hostsPlaceholder) {
+		return model.Kickstart{}, newAPIErr(http.StatusBadRequest, "kickstart_missing_placeholder",
+			"kickstart 缺少 "+hostsPlaceholder+" 占位符，无法注入主机清单")
+	}
+	if _, err := os.Stat(s.cfg.KickDir); err != nil {
+		return model.Kickstart{}, newAPIErr(http.StatusInternalServerError, "internal", "模板目录不可用: "+err.Error())
+	}
+
+	id := store.NewID()
+	dest := store.ISOPath(s.cfg.DataDir, model.ISO{
+		Path: store.ManagedKickstartRelPath(id, name),
+	})
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return model.Kickstart{}, newAPIErr(http.StatusInternalServerError, "internal", "创建模板目录失败: "+err.Error())
+	}
+	if err := os.WriteFile(dest, []byte(body), 0o644); err != nil {
+		return model.Kickstart{}, newAPIErr(http.StatusInternalServerError, "internal", "保存模板失败: "+err.Error())
+	}
+
+	k := model.Kickstart{
+		ID: id, Name: name, Arch: arch, Builtin: false,
+		Path: dest, SizeBytes: int64(len(body)), CreatedAt: store.Now(),
+	}
+	if err := s.store.CreateKickstart(k); err != nil {
+		_ = os.Remove(dest)
+		return model.Kickstart{}, newAPIErr(http.StatusInternalServerError, "internal", "登记模板失败: "+err.Error())
+	}
+	k.Placeholders = uniqueStrings(placeholderRe.FindAllString(body, -1))
+	if k.Placeholders == nil {
+		k.Placeholders = []string{}
+	}
+	return k, nil
+}
+
 // decorateKickstart fills in the placeholders found in the template body.
 func (s *Server) decorateKickstart(k model.Kickstart) model.Kickstart {
 	if body, err := os.ReadFile(k.Path); err == nil {

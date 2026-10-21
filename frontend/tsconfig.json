@@ -1,25 +1,23 @@
 {
   "compilerOptions": {
-    "target": "ESNext",
-    "jsx": "preserve",
-    "jsxImportSource": "vue",
-    "lib": ["DOM", "ESNext"],
-    "module": "ESNext",
+    "target": "esnext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitReturns": true,
+    "declaration": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["vitest/globals", "node"],
     "paths": {
       "@/*": ["./src/*"],
-      "~/*": ["./*"]
-    },
-    "resolveJsonModule": true,
-    "types": ["vite/client", "node", "unplugin-icons/types/vue", "naive-ui/volar"],
-    "strict": true,
-    "strictNullChecks": true,
-    "noUnusedLocals": false,
-    "allowSyntheticDefaultImports": true,
-    "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true
+      "@@/*": ["./src/.umi/*"],
+      "@@test/*": ["./src/.umi-test/*"],
+      "@root/*": ["./*"]
+    }
   },
-  "include": ["./**/*.ts", "./**/*.tsx", "./**/*.vue"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["./**/*.d.ts", "./**/*.ts", "./**/*.tsx"]
 }
