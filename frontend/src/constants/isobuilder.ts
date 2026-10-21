@@ -26,7 +26,6 @@ export const isoStatusRecord: Record<
   Api.IsoBuilder.IsoStatus,
   { label: string; type: 'default' | 'info' | 'success' | 'warning' | 'error' }
 > = {
-  uploading: { label: '上传中', type: 'info' },
   downloading: { label: '下载中', type: 'info' },
   hashing: { label: '校验中', type: 'warning' },
   ready: { label: '可用', type: 'success' },
@@ -40,9 +39,8 @@ export const isoStatusRecord: Record<
  * labelled differently in the two places that show it.
  */
 export const isoSourceRecord: Record<Api.IsoBuilder.IsoSource, { label: string; type: 'default' | 'info' | 'warning' }> = {
-  uploaded: { label: '上传', type: 'info' },
-  registered: { label: '就地登记', type: 'default' },
-  s3: { label: '对象存储', type: 'warning' }
+  registered: { label: '本地注册', type: 'default' },
+  url: { label: '链接导入', type: 'warning' }
 };
 
 /** the arch options */

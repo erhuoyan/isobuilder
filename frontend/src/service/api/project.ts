@@ -33,23 +33,3 @@ export function fetchValidateHosts(content: string, format: Api.IsoBuilder.Hosts
     data: { content, format }
   });
 }
-
-/** import a project package */
-export function fetchImportProject(file: File, fields: Partial<Api.IsoBuilder.ProjectPayload> = {}) {
-  const formData = new FormData();
-
-  formData.append('file', file);
-
-  if (fields.name) formData.append('name', fields.name);
-  if (fields.description) formData.append('description', fields.description);
-  if (fields.arch) formData.append('arch', fields.arch);
-  if (fields.iso_id) formData.append('iso_id', fields.iso_id);
-  if (fields.kickstart_id) formData.append('kickstart_id', fields.kickstart_id);
-
-  return request<{ project: Api.IsoBuilder.Project; detected: Api.IsoBuilder.ImportDetected }>({
-    url: '/api/projects/import',
-    method: 'post',
-    data: formData,
-    timeout: 0
-  });
-}

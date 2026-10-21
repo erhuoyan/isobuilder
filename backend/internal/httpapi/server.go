@@ -39,7 +39,6 @@ type Server struct {
 	store   *store.Store
 	manager BuildManager
 	blob    *storage.Switcher
-	uploads *uploadRegistry
 	mux     *http.ServeMux
 	log     *slog.Logger
 }
@@ -53,7 +52,6 @@ func New(cfg config.Config, st *store.Store, mgr BuildManager, blob *storage.Swi
 		store:   st,
 		manager: mgr,
 		blob:    blob,
-		uploads: newUploadRegistry(cfg.UploadDir),
 		mux:     http.NewServeMux(),
 		log:     logger,
 	}
@@ -78,10 +76,6 @@ func (s *Server) routes() {
 
 	// ISO library
 	m.HandleFunc("GET /api/isos", s.handleListISOs)
-	m.HandleFunc("POST /api/isos/uploads", s.handleStartUpload)
-	m.HandleFunc("PUT /api/isos/uploads/{upload_id}", s.handleAppendUpload)
-	m.HandleFunc("POST /api/isos/uploads/{upload_id}/finish", s.handleFinishUpload)
-	m.HandleFunc("DELETE /api/isos/uploads/{upload_id}", s.handleCancelUpload)
 	m.HandleFunc("POST /api/isos/register", s.handleRegisterISO)
 	m.HandleFunc("DELETE /api/isos/{id}", s.handleDeleteISO)
 
@@ -101,7 +95,6 @@ func (s *Server) routes() {
 	// Projects
 	m.HandleFunc("GET /api/projects", s.handleListProjects)
 	m.HandleFunc("POST /api/projects", s.handleCreateProject)
-	m.HandleFunc("POST /api/projects/import", s.handleImportProject)
 	m.HandleFunc("GET /api/projects/{id}", s.handleGetProject)
 	m.HandleFunc("PUT /api/projects/{id}", s.handleUpdateProject)
 	m.HandleFunc("DELETE /api/projects/{id}", s.handleDeleteProject)

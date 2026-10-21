@@ -147,7 +147,7 @@ curl -X PUT http://localhost:8081/api/settings -H 'Content-Type: application/jso
 
 1. **镜像库 → 添加基础镜像**，三种方式任选：
    - 从对象存储拉取：填 `s3://<bucket>/path/base.iso`（凭据留空＝用系统配置）
-   - 就地登记：填服务器上的绝对路径（**必须在 `/var/lib/isobuilder` 内**）
+   - 本地注册：填服务器上的绝对路径（**必须在 `/var/lib/isobuilder` 内**）
    - 分片上传：浏览器直传，14 GB 可断点续
    等待状态变为 **可用**（会异步算 SHA256，大 ISO 要几分钟）。
 2. **装机项目 → 新建项目**，五步向导：

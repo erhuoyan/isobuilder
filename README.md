@@ -111,7 +111,7 @@ kubectl -n isobuilder apply -f deploy/k8s/service.yaml
 
 1. **ISO 库**：原版镜像入库。三种方式：
    - **从对象存储拉取**（推荐）：填 `s3://bucket/path/base.iso`，服务端拉回本地并校验
-   - 服务器已有大文件时**就地登记**（`POST /api/isos/register`，免上传；文件须在数据目录内）
+   - 服务器已有大文件时**本地注册**（`POST /api/isos/register`，免上传；文件须在数据目录内）
    - 浏览器分片上传（`POST /api/isos/uploads` → 分块 `PUT` → `finish`，14 GB 可断点续）
 2. **项目**：名称 + 架构 + 基础镜像 + kickstart 模板 + 主机清单（hosts.yaml/JSON）。
    项目包（zip/tar.gz，随便什么目录结构）可以直接导入：平台按内容识别，自动找到 `*.ks`

@@ -648,5 +648,16 @@ func (s *Store) migrate() error {
 		model.BuildFailed, "服务重启，构建中断", Now(), model.BuildQueued, model.BuildRunning); err != nil {
 		return err
 	}
+	// The same applies to an image the previous process was downloading or
+	// hashing: that goroutine died with it, and a row left in either state
+	// would never reach a terminal one. Marking it failed also tells the
+	// operator the file is incomplete, so they re-import instead of finding out
+	// at build time.
+	if _, err := s.db.Exec(s.q(`UPDATE isos SET status=?, error=?
+	                      WHERE status IN (?,?)`),
+		model.IsoError, "服务重启，镜像下载或校验中断，请重新导入",
+		model.IsoDownloading, model.IsoHashing); err != nil {
+		return err
+	}
 	return nil
 }

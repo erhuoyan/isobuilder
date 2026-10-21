@@ -19,31 +19,17 @@ const isos = ref<Api.IsoBuilder.Iso[]>([]);
 
 const uploadShow = ref(false);
 /** which tab of the add-image drawer to open: chunked browser upload or an s3 pull */
-const uploadMode = ref<'upload' | 's3'>('upload');
-
-const registerShow = ref(false);
-const registerSubmitting = ref(false);
-const registerFormRef = ref<FormInst | null>(null);
-const registerForm = ref({
-  path: '',
-  name: '',
-  remark: '',
-  arch: 'x86_64' as Api.IsoBuilder.Arch
-});
-
-const registerRules: FormRules = {
-  path: [{ required: true, message: '请输入服务器上的 ISO 绝对路径', trigger: ['input', 'blur'] }]
-};
+const uploadMode = ref<'url' | 'path'>('url');
 
 /** an iso which is still being transferred or hashed keeps changing on the backend */
 const activeCount = computed(
   () =>
-    isos.value.filter(iso => iso.status === 'uploading' || iso.status === 'downloading' || iso.status === 'hashing')
+    isos.value.filter(iso => iso.status === 'downloading' || iso.status === 'hashing')
       .length
 );
 
 /** open the add-image drawer on the requested tab */
-function openAddDrawer(mode: 'upload' | 's3') {
+function openAddDrawer(mode: 'url' | 'path') {
   uploadMode.value = mode;
   uploadShow.value = true;
 }
@@ -84,33 +70,6 @@ async function handleDelete(row: Api.IsoBuilder.Iso) {
   }
 
   window.$message?.success('镜像已删除');
-  await loadIsos();
-}
-
-async function handleRegister() {
-  try {
-    await registerFormRef.value?.validate();
-  } catch {
-    return;
-  }
-
-  registerSubmitting.value = true;
-
-  const { error } = await fetchRegisterIso({
-    source: 'path',
-    path: registerForm.value.path.trim(),
-    name: registerForm.value.name.trim() || undefined,
-    remark: registerForm.value.remark.trim() || undefined,
-    arch: registerForm.value.arch
-  });
-
-  registerSubmitting.value = false;
-
-  if (error) return;
-
-  window.$message?.success('镜像已登记');
-  registerShow.value = false;
-  registerForm.value = { path: '', name: '', remark: '', arch: 'x86_64' };
   await loadIsos();
 }
 
@@ -260,29 +219,23 @@ onMounted(() => {
           </template>
           刷新
         </NButton>
-        <NButton @click="registerShow = true">
+        <NButton @click="openAddDrawer('path')">
           <template #icon>
             <SvgIcon icon="mdi:file-link-outline" />
           </template>
-          就地登记
+          本地注册
         </NButton>
-        <NButton @click="openAddDrawer('s3')">
+        <NButton type="primary" @click="openAddDrawer('url')">
           <template #icon>
             <SvgIcon icon="mdi:cloud-download-outline" />
           </template>
-          从对象存储拉取
-        </NButton>
-        <NButton type="primary" @click="openAddDrawer('upload')">
-          <template #icon>
-            <SvgIcon icon="mdi:upload" />
-          </template>
-          分片上传
+          链接导入
         </NButton>
       </NSpace>
     </div>
 
     <NAlert v-if="activeCount > 0" class="mb-12px" type="info" :bordered="false" :show-icon="true">
-      有 {{ activeCount }} 个镜像正在上传、下载或计算校验值，列表每 3 秒自动刷新。
+      有 {{ activeCount }} 个镜像正在下载或计算校验值，列表每 3 秒自动刷新。
     </NAlert>
 
     <NDataTable
@@ -297,54 +250,13 @@ onMounted(() => {
     >
       <template #empty>
         <div class="py-40px">
-          <NEmpty description="还没有基础镜像，先分片上传一个 ISO 吧" />
+          <NEmpty description="还没有基础镜像，先用「链接导入」拉取一个 ISO 吧" />
         </div>
       </template>
     </NDataTable>
 
     <IsoUploadDrawer v-model:show="uploadShow" :mode="uploadMode" @finished="loadIsos()" />
 
-    <NDrawer v-model:show="registerShow" placement="right" width="min(100vw, 480px)">
-      <NDrawerContent title="就地登记 ISO" :native-scrollbar="false" closable>
-        <div class="flex flex-col gap-12px">
-          <NAlert type="default" :bordered="false" :show-icon="false">
-            登记服务器上已经存在的 ISO 文件，不复制文件内容，只写入镜像记录。
-          </NAlert>
-
-          <NForm
-            ref="registerFormRef"
-            :model="registerForm"
-            :rules="registerRules"
-            label-placement="top"
-            :show-require-mark="false"
-          >
-            <NFormItem label="文件路径" path="path">
-              <NInput
-                v-model:value="registerForm.path"
-                :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
-                placeholder="/data/isos/Rocky-9.8-x86_64-dvd.iso"
-              />
-            </NFormItem>
-            <NFormItem label="镜像名称" path="name">
-              <NInput v-model:value="registerForm.name" placeholder="留空则取文件名" />
-            </NFormItem>
-            <NFormItem label="备注" path="remark">
-              <NInput v-model:value="registerForm.remark" placeholder="例如：京西机房 6.24 批次用" />
-            </NFormItem>
-            <NFormItem label="架构" path="arch">
-              <NSelect v-model:value="registerForm.arch" :options="archOptions" />
-            </NFormItem>
-          </NForm>
-        </div>
-
-        <template #footer>
-          <NSpace justify="end">
-            <NButton @click="registerShow = false">取消</NButton>
-            <NButton type="primary" :loading="registerSubmitting" @click="handleRegister">登记</NButton>
-          </NSpace>
-        </template>
-      </NDrawerContent>
-    </NDrawer>
     </NCard>
   </div>
 </template>

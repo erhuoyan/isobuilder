@@ -7,7 +7,6 @@ import {
   fetchGetKickstartContent,
   fetchGetKickstarts,
   fetchGetScripts,
-  fetchImportProject
 } from '@/service/api';
 import { getApiErrorCode, getApiErrorMessage } from '@/service/api/errors';
 import { archOptions, isoSourceRecord } from '@/constants/isobuilder';
@@ -26,11 +25,6 @@ const steps = [
   { key: 'post-script', title: '自定义脚本', description: '安装完成后执行的自定义脚本' },
   { key: 'advanced', title: '高级项', description: 'ISO 卷标与产物文件名' }
 ] as const;
-
-/** the project package formats which the backend accepts */
-const IMPORT_EXTENSIONS = ['.zip', '.tar.gz', '.tgz', '.tar'];
-/** the backend rejects the project packages bigger than 64 MiB */
-const IMPORT_MAX_BYTES = 64 * 1024 * 1024;
 
 const currentStep = ref(0);
 const currentStepInfo = computed(() => steps[currentStep.value] || steps[0]);
@@ -138,8 +132,8 @@ const stepHint = computed(() => {
 
 function isoUnavailableReason(iso: Api.IsoBuilder.Iso) {
   switch (iso.status) {
-    case 'uploading':
-      return '镜像仍在上传中，上传完成并校验通过后才能选用。';
+    case 'downloading':
+      return '镜像仍在下载中，下载完成并校验通过后才能选用。';
     case 'hashing':
       return '正在计算 SHA256，校验通过后才能选用。';
     case 'error':
@@ -251,22 +245,6 @@ async function openPreview(kickstart: Api.IsoBuilder.Kickstart) {
   previewContent.value = data.content;
 }
 
-/** the project package import drawer */
-const importVisible = ref(false);
-const importFile = ref<File | null>(null);
-const importFileInputRef = ref<HTMLInputElement | null>(null);
-const importForm = ref({
-  name: '',
-  description: '',
-  arch: 'x86_64' as Api.IsoBuilder.Arch,
-  iso_id: '',
-  kickstart_id: ''
-});
-const importing = ref(false);
-const importError = ref('');
-const importedProject = ref<Api.IsoBuilder.Project | null>(null);
-const importedDetected = ref<Api.IsoBuilder.ImportDetected | null>(null);
-
 const isoSelectOptions = computed(() =>
   isos.value
     .filter(iso => iso.status === 'ready')
@@ -277,98 +255,6 @@ const kickstartSelectOptions = computed(() =>
   kickstarts.value.map(kickstart => ({ label: `${kickstart.name} · ${kickstart.arch}`, value: kickstart.id }))
 );
 
-function openImport() {
-  const project = form.value;
-
-  importForm.value = {
-    name: project.name,
-    description: project.description,
-    arch: project.arch,
-    iso_id: project.iso_id,
-    kickstart_id: project.kickstart_id
-  };
-  importFile.value = null;
-  importError.value = '';
-  importedProject.value = null;
-  importedDetected.value = null;
-  importVisible.value = true;
-}
-
-function triggerImportFileSelect() {
-  importFileInputRef.value?.click();
-}
-
-function handleImportFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-
-  input.value = '';
-
-  if (!file) return;
-
-  const filename = file.name.toLowerCase();
-
-  if (!IMPORT_EXTENSIONS.some(extension => filename.endsWith(extension))) {
-    window.$message?.error('仅支持 .zip / .tar.gz / .tgz / .tar 格式的项目包。');
-    return;
-  }
-
-  if (file.size > IMPORT_MAX_BYTES) {
-    window.$message?.error(`项目包不能超过 ${formatBytes(IMPORT_MAX_BYTES)}（当前 ${formatBytes(file.size)}）。`);
-    return;
-  }
-
-  importFile.value = file;
-  importError.value = '';
-}
-
-async function submitImport() {
-  if (!importFile.value) {
-    window.$message?.warning('请先选择项目包文件。');
-    return;
-  }
-
-  const fields: Partial<Api.IsoBuilder.ProjectPayload> = {};
-  const source = importForm.value;
-
-  if (source.name.trim()) fields.name = source.name.trim();
-  if (source.description.trim()) fields.description = source.description.trim();
-  if (source.arch) fields.arch = source.arch;
-  if (source.iso_id) fields.iso_id = source.iso_id;
-  if (source.kickstart_id) fields.kickstart_id = source.kickstart_id;
-
-  importing.value = true;
-  importError.value = '';
-
-  const { data, error } = await fetchImportProject(importFile.value, fields);
-
-  importing.value = false;
-
-  if (error) {
-    const code = getApiErrorCode(error);
-    const message = getApiErrorMessage(error);
-
-    if (code === 'archive_no_hosts') {
-      importError.value = `项目包中没有找到可解析的主机清单（hosts*.yaml / hosts*.json）。${message}`;
-    } else if (code === 'invalid_archive') {
-      importError.value = `项目包无法解析：${message}`;
-    } else {
-      importError.value = message;
-    }
-
-    return;
-  }
-
-  importedProject.value = data.project;
-  importedDetected.value = data.detected;
-  window.$message?.success('项目包导入成功');
-}
-
-function goToImportedProject() {
-  if (!importedProject.value) return;
-
-  routerPushByKey('project-detail', { params: { id: importedProject.value.id } });
-}
 
 onMounted(async () => {
   await Promise.all([loadIsos(), loadKickstarts(), loadScripts()]);
@@ -480,23 +366,6 @@ onMounted(async () => {
           </div>
         </div>
 
-        <NCard size="small" :bordered="true">
-          <div class="flex flex-wrap items-center justify-between gap-12px">
-            <div>
-              <div class="text-14px font-500">从项目包导入</div>
-              <div class="mt-4px text-12px text-gray-500">
-                支持 .zip / .tar.gz / .tgz / .tar，单个文件不超过 {{ formatBytes(IMPORT_MAX_BYTES) }}。服务端会自动识别包内的
-                kickstart 与主机清单。
-              </div>
-            </div>
-            <NButton type="primary" secondary @click="openImport">
-              <template #icon>
-                <SvgIcon icon="mdi:package-variant-closed" />
-              </template>
-              从项目包导入
-            </NButton>
-          </div>
-        </NCard>
       </div>
 
       <!-- 3. kickstart 模板 -->
@@ -667,85 +536,6 @@ onMounted(async () => {
     </NDrawerContent>
   </NDrawer>
 
-  <NDrawer v-model:show="importVisible" :width="drawerWidth" placement="right">
-    <NDrawerContent title="从项目包导入" :native-scrollbar="false" closable>
-      <div v-if="importedProject" class="flex flex-col gap-12px">
-        <NAlert type="success" :bordered="false" :show-icon="true">
-          项目「{{ importedProject.name }}」导入完成。
-        </NAlert>
-
-        <div class="flex flex-col gap-8px">
-          <div class="text-13px text-gray-500">识别到的 kickstart（包内路径）</div>
-          <CopyText :text="importedDetected?.kickstart || ''" />
-          <div class="text-13px text-gray-500">识别到的主机清单（包内路径）</div>
-          <CopyText :text="importedDetected?.hosts || ''" />
-        </div>
-
-        <NSpace>
-          <NButton type="primary" @click="goToImportedProject">进入项目</NButton>
-          <NButton @click="importVisible = false">关闭</NButton>
-        </NSpace>
-      </div>
-
-      <NForm v-else label-placement="top">
-        <input
-          ref="importFileInputRef"
-          type="file"
-          accept=".zip,.tar.gz,.tgz,.tar"
-          class="hidden"
-          @change="handleImportFileChange"
-        />
-
-        <NFormItem label="项目包" required>
-          <div class="flex w-full flex-wrap items-center gap-8px">
-            <NButton @click="triggerImportFileSelect">
-              <template #icon>
-                <SvgIcon icon="mdi:folder-open-outline" />
-              </template>
-              选择文件
-            </NButton>
-            <span class="font-mono text-13px text-gray-500">{{ importFile?.name || '尚未选择文件' }}</span>
-          </div>
-        </NFormItem>
-
-        <NAlert type="info" size="small" :bordered="false" :show-icon="false" class="mb-12px">
-          未填写的字段会沿用服务端的默认值；下方字段已预填当前向导中的选择。
-        </NAlert>
-
-        <NFormItem label="项目名称">
-          <NInput v-model:value="importForm.name" placeholder="留空则使用包内/服务端默认名称" />
-        </NFormItem>
-        <NFormItem label="描述">
-          <NInput v-model:value="importForm.description" placeholder="选填" />
-        </NFormItem>
-        <NFormItem label="目标架构">
-          <NSelect v-model:value="importForm.arch" :options="archOptions" />
-        </NFormItem>
-        <NFormItem label="基础镜像">
-          <NSelect
-            v-model:value="importForm.iso_id"
-            :options="isoSelectOptions"
-            clearable
-            placeholder="选填，仅列出「可用」的镜像"
-          />
-        </NFormItem>
-        <NFormItem label="kickstart 模板">
-          <NSelect v-model:value="importForm.kickstart_id" :options="kickstartSelectOptions" clearable placeholder="选填" />
-        </NFormItem>
-
-        <NAlert v-if="importError" type="error" :bordered="false" :show-icon="true" class="mb-12px">
-          {{ importError }}
-        </NAlert>
-
-        <NButton type="primary" :loading="importing" @click="submitImport">
-          <template #icon>
-            <SvgIcon icon="mdi:package-variant-closed" />
-          </template>
-          开始导入
-        </NButton>
-      </NForm>
-    </NDrawerContent>
-  </NDrawer>
 </template>
 
 <style lang="scss" scoped>

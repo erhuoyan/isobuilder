@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<Props>(), { animated: true });
 
 const record = computed(() => isoStatusRecord[props.status] || { label: props.status, type: 'default' as const });
 
-const processing = computed(() => props.status === 'uploading' || props.status === 'downloading' || props.status === 'hashing');
+const processing = computed(() => props.status === 'downloading' || props.status === 'hashing');
 </script>
 
 <template>

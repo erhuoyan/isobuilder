@@ -38,10 +38,15 @@ declare namespace Api {
     type NetworkMode = 'single' | 'bond';
 
     /** the status of a base iso */
-    type IsoStatus = 'uploading' | 'downloading' | 'hashing' | 'ready' | 'error';
+    type IsoStatus = 'downloading' | 'hashing' | 'ready' | 'error';
 
-    /** how the iso entered the library */
-    type IsoSource = 'uploaded' | 'registered' | 's3';
+    /**
+     * How the iso entered the library.
+     *
+     * `registered` adopts a file already on the server disk, `url` makes the server download an
+     * arbitrary HTTP(S) link — object storage presigned/public links included.
+     */
+    type IsoSource = 'registered' | 'url';
 
     /** the status of a build */
     type BuildStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
@@ -152,12 +157,14 @@ declare namespace Api {
 
     /** `POST /api/isos/register` */
     interface RegisterIsoPayload {
-      source: 'path' | 's3';
+      source: 'path' | 'url';
+      /** the absolute path on the server, used by `source=path` */
       path?: string;
+      /** the HTTP(S) download link, used by `source=url` */
+      url?: string;
       name?: string;
       remark?: string;
       arch: Arch;
-      s3?: S3RegisterSource;
     }
 
     /** a base iso */
@@ -333,21 +340,6 @@ declare namespace Api {
       created_at: string;
       started_at: string;
       finished_at: string;
-    }
-
-    /** the result of `POST /api/projects/import` */
-    interface ImportDetected {
-      /** the path of the detected kickstart inside the archive */
-      kickstart?: string;
-      /** the path of the detected hosts inventory inside the archive */
-      hosts?: string;
-    }
-
-    /** `POST /api/isos/uploads` */
-    interface UploadSession {
-      iso: Iso;
-      upload_id: string;
-      chunk_size: number;
     }
 
     /** one line of the build log stream */

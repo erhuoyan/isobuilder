@@ -5,271 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"isobuilder/internal/config"
 	"isobuilder/internal/model"
-	"isobuilder/internal/settings"
-	"isobuilder/internal/storage"
 	"isobuilder/internal/store"
 )
-
-// chunkSize is the upload chunk size advertised to clients. ISO images are tens
-// of gigabytes, so uploads are streamed straight to disk and never buffered.
-const chunkSize = 64 << 20
-
-// upload is one in-flight ISO upload.
-type upload struct {
-	ID       string
-	IsoID    string
-	Name     string
-	Filename string
-	Arch     string
-	Path     string
-	Size     int64 // declared size, 0 when unknown
-	Received int64
-	Created  time.Time
-
-	mu sync.Mutex
-}
-
-// uploadRegistry tracks in-flight chunked uploads.
-type uploadRegistry struct {
-	dir  string
-	mu   sync.Mutex
-	byID map[string]*upload
-}
-
-func newUploadRegistry(dir string) *uploadRegistry {
-	return &uploadRegistry{dir: dir, byID: map[string]*upload{}}
-}
-
-func (g *uploadRegistry) add(u *upload) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.byID[u.ID] = u
-}
-
-func (g *uploadRegistry) get(id string) (*upload, bool) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	u, ok := g.byID[id]
-	return u, ok
-}
-
-func (g *uploadRegistry) remove(id string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.byID, id)
-}
-
-// handleStartUpload creates an upload slot and an ISO record in "uploading".
-func (s *Server) handleStartUpload(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Name      string `json:"name"`
-		Filename  string `json:"filename"`
-		Arch      string `json:"arch"`
-		SizeBytes int64  `json:"size_bytes"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	req.Filename = sanitizeFilename(req.Filename)
-	if req.Filename == "" {
-		fail(w, http.StatusBadRequest, "invalid_filename", "缺少 filename")
-		return
-	}
-	if !strings.HasSuffix(strings.ToLower(req.Filename), ".iso") {
-		fail(w, http.StatusBadRequest, "invalid_filename", "只接受 .iso 文件")
-		return
-	}
-	if req.Arch != model.ArchX86 && req.Arch != model.ArchARM {
-		fail(w, http.StatusBadRequest, "invalid_arch", `arch 必须是 "x86_64" 或 "aarch64"`)
-		return
-	}
-	if req.SizeBytes > s.cfg.MaxUploadBytes {
-		fail(w, http.StatusRequestEntityTooLarge, "too_large",
-			fmt.Sprintf("文件 %s 超过单文件上限 %s", humanBytes(req.SizeBytes), humanBytes(s.cfg.MaxUploadBytes)))
-		return
-	}
-	if req.Name == "" {
-		req.Name = strings.TrimSuffix(req.Filename, filepath.Ext(req.Filename))
-	}
-
-	isoID := store.NewID()
-	uploadID := store.NewID()
-	// Stored relative to data_dir; resolved with store.ISOPath at use time so
-	// moving the data directory never orphans the row.
-	relPath := store.ManagedISORelPath(isoID, req.Filename)
-	path := store.ISOPath(s.cfg.DataDir, model.ISO{Path: relPath})
-
-	iso := model.ISO{
-		ID:        isoID,
-		Name:      req.Name,
-		Filename:  req.Filename,
-		Arch:      req.Arch,
-		SizeBytes: req.SizeBytes,
-		Status:    model.IsoUploading,
-		Source:    model.SourceUploaded,
-		Path:      relPath,
-		CreatedAt: store.Now(),
-	}
-	if err := s.store.CreateISO(iso); err != nil {
-		fail(w, http.StatusInternalServerError, "internal", "创建镜像记录失败: "+err.Error())
-		return
-	}
-	// Managed ISOs live in isos/<id>/; the chunk writer opens the file with
-	// O_CREATE and does not create parents.
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		_ = s.store.DeleteISO(isoID)
-		fail(w, http.StatusInternalServerError, "internal", "创建镜像目录失败: "+err.Error())
-		return
-	}
-	u := &upload{
-		ID: uploadID, IsoID: isoID, Name: req.Name, Filename: req.Filename,
-		Arch: req.Arch, Path: path, Size: req.SizeBytes, Created: time.Now(),
-	}
-	s.uploads.add(u)
-
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"iso":        iso,
-		"upload_id":  uploadID,
-		"chunk_size": chunkSize,
-	})
-}
-
-// handleAppendUpload appends one chunk. Chunks must arrive strictly in order;
-// a mismatch reports the authoritative offset so the client can resume.
-func (s *Server) handleAppendUpload(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("upload_id")
-	u, ok := s.uploads.get(id)
-	if !ok {
-		fail(w, http.StatusNotFound, "upload_not_found", "上传会话不存在或已结束")
-		return
-	}
-
-	offset, err := parseIntQuery(r, "offset")
-	if err != nil || offset < 0 {
-		fail(w, http.StatusBadRequest, "invalid_offset", "缺少或非法的 offset 参数")
-		return
-	}
-
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if offset != u.Received {
-		fail(w, http.StatusConflict, "offset_mismatch",
-			fmt.Sprintf("服务器已接收 %d 字节，本次 offset 为 %d", u.Received, offset),
-			map[string]any{"received_bytes": u.Received})
-		return
-	}
-	if u.Size > 0 && u.Received >= u.Size {
-		fail(w, http.StatusConflict, "upload_complete", "文件已接收完毕，请调用 finish")
-		return
-	}
-
-	remaining := s.cfg.MaxUploadBytes - u.Received
-	body := io.Reader(r.Body)
-	if remaining <= 0 {
-		fail(w, http.StatusRequestEntityTooLarge, "too_large", "超过单文件上限")
-		return
-	}
-	if maxChunk := int64(chunkSize) * 2; remaining > maxChunk {
-		remaining = maxChunk
-	}
-	body = io.LimitReader(r.Body, remaining)
-
-	f, err := os.OpenFile(u.Path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "internal", "写入镜像文件失败: "+err.Error())
-		return
-	}
-	written, copyErr := io.Copy(f, body)
-	closeErr := f.Close()
-	if copyErr != nil {
-		_ = os.Truncate(u.Path, u.Received)
-		fail(w, http.StatusInternalServerError, "internal", "接收数据失败: "+copyErr.Error())
-		return
-	}
-	if closeErr != nil {
-		fail(w, http.StatusInternalServerError, "internal", "落盘失败: "+closeErr.Error())
-		return
-	}
-	if written == 0 {
-		fail(w, http.StatusBadRequest, "empty_chunk", "分片为空")
-		return
-	}
-	u.Received += written
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"received_bytes": u.Received,
-		"complete":       u.Size > 0 && u.Received >= u.Size,
-	})
-}
-
-// handleFinishUpload seals the file and starts hashing in the background.
-func (s *Server) handleFinishUpload(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("upload_id")
-	u, ok := s.uploads.get(id)
-	if !ok {
-		fail(w, http.StatusNotFound, "upload_not_found", "上传会话不存在或已结束")
-		return
-	}
-	u.mu.Lock()
-	size := u.Received
-	path, isoID := u.Path, u.IsoID
-	u.mu.Unlock()
-
-	if size == 0 {
-		_ = os.Remove(path)
-		s.uploads.remove(id)
-		_ = s.store.DeleteISO(isoID)
-		fail(w, http.StatusBadRequest, "empty_upload", "没有收到任何数据")
-		return
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "internal", "打开镜像文件失败: "+err.Error())
-		return
-	}
-	if err := f.Sync(); err != nil {
-		s.log.Warn("fsync failed", "path", path, "err", err)
-	}
-	_ = f.Close()
-
-	if err := s.store.FinishISO(isoID, model.IsoHashing, "", size, ""); err != nil {
-		fail(w, http.StatusInternalServerError, "internal", "更新镜像状态失败: "+err.Error())
-		return
-	}
-	s.uploads.remove(id)
-	go s.hashISO(isoID, path)
-
-	iso, err := s.store.GetISO(isoID)
-	if err != nil {
-		storeFail(w, err, "镜像")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"iso": iso})
-}
-
-// handleCancelUpload drops an in-flight upload and its partial file.
-func (s *Server) handleCancelUpload(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("upload_id")
-	u, ok := s.uploads.get(id)
-	if !ok {
-		fail(w, http.StatusNotFound, "upload_not_found", "上传会话不存在或已结束")
-		return
-	}
-	s.uploads.remove(id)
-	_ = os.Remove(u.Path)
-	_ = s.store.DeleteISO(u.IsoID)
-	writeJSON(w, http.StatusOK, map[string]any{})
-}
 
 // hashISO computes the artifact checksum of a stored base image. Hashing is
 // deliberately deferred: it reads the whole image, which takes minutes.
@@ -300,29 +49,25 @@ func (s *Server) handleListISOs(w http.ResponseWriter, r *http.Request) {
 }
 
 // registerRequest describes the three ways a base image enters the library:
-// the server's own disk, an object storage address, or a browser upload
-// (handled separately by the chunked upload endpoints).
+// the server's own disk, an S3 object address, or a plain HTTP(S) download URL.
+// Nothing is ever uploaded through the browser: a 14 GB image would tie up the
+// operator's uplink for hours, so the server does the transfer instead.
 type registerRequest struct {
-	Source string `json:"source"` // "path" (default) | "s3"
+	Source string `json:"source"` // "path" (default) | "url"
 	Path   string `json:"path"`
 	Name   string `json:"name"`
 	Remark string `json:"remark"`
 	Arch   string `json:"arch"`
-
-	S3 *struct {
-		URL       string `json:"url"` // s3://bucket/key
-		Endpoint  string `json:"endpoint"`
-		Region    string `json:"region"`
-		Bucket    string `json:"bucket"`
-		Key       string `json:"key"`
-		AccessKey string `json:"access_key"`
-		SecretKey string `json:"secret_key"`
-		PathStyle *bool  `json:"path_style"`
-	} `json:"s3"`
+	// URL is an HTTP(S) download link, used by source="url". Object storage
+	// works here too: buckets expose HTTP URLs (public, presigned, or signed
+	// by a CDN), so there is no separate S3 code path.
+	URL string `json:"url"`
 }
 
-// handleRegisterISO adopts an ISO that is already reachable from the server:
-// a file on its disk, or an object in an S3-compatible bucket.
+// handleRegisterISO adopts an ISO the server can reach on its own: a file on its
+// disk, or any HTTP(S) download link. Images are tens of gigabytes, so they
+// never travel through the browser; the operator pastes a link and the server
+// streams it into the image directory.
 func (s *Server) handleRegisterISO(w http.ResponseWriter, r *http.Request) {
 	var req registerRequest
 	if !decodeJSON(w, r, &req) {
@@ -338,10 +83,10 @@ func (s *Server) handleRegisterISO(w http.ResponseWriter, r *http.Request) {
 	switch req.Source {
 	case "path":
 		s.registerFromPath(w, req)
-	case "s3":
-		s.registerFromS3(w, r, req)
+	case "url":
+		s.registerFromURL(w, r, req)
 	default:
-		fail(w, http.StatusBadRequest, "invalid_source", `source 必须是 "path" 或 "s3"`)
+		fail(w, http.StatusBadRequest, "invalid_source", `source 必须是 "path" 或 "url"`)
 	}
 }
 
@@ -401,67 +146,49 @@ func (s *Server) registerFromPath(w http.ResponseWriter, req registerRequest) {
 	writeJSON(w, http.StatusCreated, map[string]any{"iso": iso})
 }
 
-// registerFromS3 pulls an ISO from an object store into the local image
-// directory. Explicit fields override the system settings, so a one-off image in
-// someone else's bucket works without touching the global configuration.
-func (s *Server) registerFromS3(w http.ResponseWriter, r *http.Request, req registerRequest) {
-	if req.S3 == nil {
-		fail(w, http.StatusBadRequest, "invalid_s3", "缺少 s3 配置")
-		return
-	}
-	cfg := settings.Load(s.store, s.cfg.Storage).ToConfig()
-
-	bucket, key := strings.TrimSpace(req.S3.Bucket), strings.TrimSpace(req.S3.Key)
-	if raw := strings.TrimSpace(req.S3.URL); raw != "" {
-		parsed, err := parseS3URL(raw)
-		if err != nil {
-			fail(w, http.StatusBadRequest, "invalid_s3", err.Error())
-			return
-		}
-		if bucket == "" {
-			bucket = parsed.Bucket
-		}
-		if key == "" {
-			key = parsed.Key
-		}
-	}
-	if endpoint := strings.TrimSpace(req.S3.Endpoint); endpoint != "" {
-		cfg.Endpoint = endpoint
-	}
-	if region := strings.TrimSpace(req.S3.Region); region != "" {
-		cfg.Region = region
-	}
-	if ak := strings.TrimSpace(req.S3.AccessKey); ak != "" {
-		cfg.AccessKey = ak
-	}
-	if sk := strings.TrimSpace(req.S3.SecretKey); sk != "" {
-		cfg.SecretKey = sk
-	}
-	if req.S3.PathStyle != nil {
-		cfg.PathStyle = *req.S3.PathStyle
-	}
-	if bucket == "" || key == "" {
-		fail(w, http.StatusBadRequest, "invalid_s3",
-			"需要提供对象地址（s3://bucket/path/to.iso），或同时给出 bucket 与 key")
-		return
-	}
-	cfg.Bucket = bucket
-	if cfg.AccessKey == "" || cfg.SecretKey == "" {
-		fail(w, http.StatusBadRequest, "storage_not_configured",
-			"未提供对象存储凭据，请先在「系统配置」里填写，或在本表单里临时填写 AK/SK")
+// registerFromURL imports an image from a download link. This covers object
+// storage too: an S3-compatible bucket exposes HTTP URLs (public, presigned, or
+// signed by the CDN), so one transport serves mirrors, vendor sites, internal
+// file servers and buckets alike.
+func (s *Server) registerFromURL(w http.ResponseWriter, r *http.Request, req registerRequest) {
+	raw := strings.TrimSpace(req.URL)
+	if raw == "" {
+		fail(w, http.StatusBadRequest, "invalid_url", "缺少 url")
 		return
 	}
 
-	client := storage.NewS3(cfg)
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		fail(w, http.StatusBadRequest, "invalid_url", "链接必须是 http:// 或 https:// 开头的完整地址")
+		return
+	}
+
+	// Probe before creating the record: a wrong link should fail in a second,
+	// not after a row appears in the library and sits in "downloading" forever.
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	probeErr := client.Head(ctx, key)
+	probe, probeErr := s.probeURL(ctx, raw)
 	cancel()
 	if probeErr != nil {
-		fail(w, http.StatusBadRequest, "s3_object_unreachable", probeErr.Error())
+		fail(w, http.StatusBadRequest, "url_unreachable", probeErr.Error())
 		return
 	}
 
-	filename := path.Base(key)
+	filename := sanitizeFilename(urlFilename(parsed, probe.filename))
+	if filename == "" || filename == "." || filename == "/" {
+		fail(w, http.StatusBadRequest, "invalid_url",
+			"无法从链接推断文件名，请在链接里带上文件名")
+		return
+	}
+	if !strings.HasSuffix(strings.ToLower(filename), ".iso") {
+		filename += ".iso"
+	}
+	if probe.size > 0 && probe.size > s.cfg.MaxUploadBytes {
+		fail(w, http.StatusRequestEntityTooLarge, "too_large",
+			fmt.Sprintf("远端文件 %s 超过单文件上限 %s",
+				humanBytes(probe.size), humanBytes(s.cfg.MaxUploadBytes)))
+		return
+	}
+
 	isoID := store.NewID()
 	iso := model.ISO{
 		ID:        isoID,
@@ -469,8 +196,9 @@ func (s *Server) registerFromS3(w http.ResponseWriter, r *http.Request, req regi
 		Filename:  filename,
 		Arch:      req.Arch,
 		Remark:    strings.TrimSpace(req.Remark),
+		SizeBytes: probe.size,
 		Status:    model.IsoDownloading,
-		Source:    model.SourceS3,
+		Source:    model.SourceURL,
 		Path:      store.ManagedISORelPath(isoID, filename),
 		CreatedAt: store.Now(),
 	}
@@ -478,63 +206,151 @@ func (s *Server) registerFromS3(w http.ResponseWriter, r *http.Request, req regi
 		fail(w, http.StatusInternalServerError, "internal", "登记镜像失败: "+err.Error())
 		return
 	}
-	go s.fetchISOFromS3(iso.ID, cfg, key)
+	go s.fetchISOFromURL(iso.ID, raw)
 
 	writeJSON(w, http.StatusCreated, map[string]any{"iso": iso})
 }
 
-// fetchISOFromS3 downloads the object and then hashes it, mirroring the states
-// of an upload (uploading/hashing → ready/error).
-func (s *Server) fetchISOFromS3(isoID string, cfg config.StorageConfig, key string) {
+// urlProbe is what the pre-flight request tells us about the remote file.
+type urlProbe struct {
+	size     int64
+	filename string
+}
+
+// probeURL checks the link is downloadable. It tries HEAD first and falls back
+// to a one-byte ranged GET, because plain static file hosts often reject HEAD.
+func (s *Server) probeURL(ctx context.Context, raw string) (urlProbe, error) {
+	headReq, err := http.NewRequestWithContext(ctx, http.MethodHead, raw, nil)
+	if err != nil {
+		return urlProbe{}, fmt.Errorf("链接格式不正确: %w", err)
+	}
+	if resp, headErr := http.DefaultClient.Do(headReq); headErr == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return urlProbe{size: resp.ContentLength, filename: filenameFromDisposition(resp)}, nil
+		}
+	}
+
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return urlProbe{}, fmt.Errorf("链接格式不正确: %w", err)
+	}
+	getReq.Header.Set("Range", "bytes=0-0")
+	resp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		return urlProbe{}, fmt.Errorf("无法访问该链接: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return urlProbe{}, fmt.Errorf("远端返回 HTTP %d，请确认链接可直接下载", resp.StatusCode)
+	}
+
+	var size int64
+	// Content-Range looks like "bytes 0-0/12345"; the total follows the slash.
+	if cr := resp.Header.Get("Content-Range"); cr != "" {
+		if idx := strings.LastIndex(cr, "/"); idx >= 0 {
+			if total, convErr := strconv.ParseInt(cr[idx+1:], 10, 64); convErr == nil {
+				size = total
+			}
+		}
+	}
+	return urlProbe{size: size, filename: filenameFromDisposition(resp)}, nil
+}
+
+// filenameFromDisposition prefers the server-provided name, since CDN and
+// presigned links often end in an opaque token rather than the real filename.
+func filenameFromDisposition(resp *http.Response) string {
+	cd := resp.Header.Get("Content-Disposition")
+	if cd == "" {
+		return ""
+	}
+	if _, params, err := mime.ParseMediaType(cd); err == nil {
+		return params["filename"]
+	}
+	return ""
+}
+
+// urlFilename derives a filename from the URL path, ignoring the query string.
+func urlFilename(parsed *url.URL, fromHeader string) string {
+	if fromHeader != "" {
+		return fromHeader
+	}
+	return path.Base(parsed.Path)
+}
+
+// fetchISOFromURL streams the image to disk and then hashes it, mirroring the
+// states of the removed upload path (downloading → hashing → ready/error).
+func (s *Server) fetchISOFromURL(isoID, raw string) {
 	iso, err := s.store.GetISO(isoID)
 	if err != nil {
-		s.log.Error("load iso for s3 fetch", "iso", isoID, "err", err)
+		s.log.Error("load iso for url fetch", "iso", isoID, "err", err)
 		return
 	}
+
+	// Images are large; a stalled mirror must not hold the slot forever.
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 	defer cancel()
 
-	client := storage.NewS3(cfg)
 	absPath := store.ISOPath(s.cfg.DataDir, iso)
-	size, err := client.Get(ctx, key, absPath, nil)
-	if err != nil {
-		s.log.Error("fetch iso from s3", "iso", isoID, "key", key, "err", err)
-		_ = s.store.FinishISO(isoID, model.IsoError, "", 0, "从对象存储下载失败: "+err.Error())
+	if mkErr := os.MkdirAll(filepath.Dir(absPath), 0o755); mkErr != nil {
+		_ = s.store.FinishISO(isoID, model.IsoError, "", 0, "创建镜像目录失败: "+mkErr.Error())
 		return
 	}
-	s.log.Info("fetched iso from s3", "iso", isoID, "key", key, "bytes", size)
+
+	size, err := downloadTo(ctx, raw, absPath, s.cfg.MaxUploadBytes)
+	if err != nil {
+		s.log.Error("fetch iso from url", "iso", isoID, "err", err)
+		_ = s.store.FinishISO(isoID, model.IsoError, "", 0, "从链接下载失败: "+err.Error())
+		return
+	}
+	s.log.Info("fetched iso from url", "iso", isoID, "bytes", size)
 	_ = s.store.FinishISO(isoID, model.IsoHashing, "", size, "")
 	s.hashISO(isoID, absPath)
 }
 
-// s3Target is a parsed s3://bucket/key address.
-type s3Target struct {
-	Bucket string
-	Key    string
-}
+// downloadTo streams src into dest, refusing anything above limit. A partly
+// written file is removed on failure so a retry starts from a clean slate.
+func downloadTo(ctx context.Context, src, dest string, limit int64) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
 
-func parseS3URL(raw string) (s3Target, error) {
-	trimmed := strings.TrimPrefix(strings.TrimSpace(raw), "s3://")
-	// A plain https URL to an S3 endpoint is accepted too: the first path
-	// segment is the bucket under path-style addressing.
-	if trimmed == raw {
-		trimmed = strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
-		if idx := strings.Index(trimmed, "/"); idx > 0 {
-			rest := strings.TrimPrefix(trimmed[idx+1:], "/")
-			parts := strings.SplitN(rest, "/", 2)
-			if len(parts) == 2 {
-				// host/bucket/key — the host is the endpoint, which the caller
-				// must supply separately unless it is the system default.
-				return s3Target{Bucket: parts[0], Key: parts[1]}, nil
-			}
-		}
-		return s3Target{}, fmt.Errorf("无法从 %q 解析对象地址，请改用 s3://bucket/key 格式", raw)
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("远端返回 HTTP %d", resp.StatusCode)
 	}
-	parts := strings.SplitN(strings.TrimPrefix(trimmed, "/"), "/", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return s3Target{}, fmt.Errorf("对象地址 %q 格式不正确，应为 s3://bucket/path/to.iso", raw)
+
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return 0, err
 	}
-	return s3Target{Bucket: parts[0], Key: parts[1]}, nil
+
+	var body io.Reader = resp.Body
+	if limit > 0 {
+		// Read one byte past the limit so an oversized body is detected rather
+		// than silently truncated.
+		body = io.LimitReader(resp.Body, limit+1)
+	}
+
+	written, copyErr := io.Copy(f, body)
+	if closeErr := f.Close(); copyErr == nil {
+		copyErr = closeErr
+	}
+	if copyErr != nil {
+		_ = os.Remove(dest)
+		return 0, copyErr
+	}
+	if limit > 0 && written > limit {
+		_ = os.Remove(dest)
+		return 0, fmt.Errorf("文件超过单文件上限 %s", humanBytes(limit))
+	}
+	return written, nil
 }
 
 // readableByService reports whether the running service account can open a file,
@@ -588,10 +404,10 @@ func (s *Server) handleDeleteISO(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("还有 %d 个项目在使用该镜像，请先删除或改绑这些项目", used))
 		return
 	}
-	// Uploaded and S3-pulled files are ours to delete; a registered ISO points
-	// at a file the operator put there, so leave it alone.
+	// Downloaded files are ours to delete; a registered ISO points at a file
+	// the operator put there, so leave it alone.
 	absPath := store.ISOPath(s.cfg.DataDir, iso)
-	managed := iso.Source == model.SourceUploaded || iso.Source == model.SourceS3
+	managed := iso.Source == model.SourceURL
 	if managed && within(s.cfg.IsoDir, absPath) {
 		if err := os.Remove(absPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			fail(w, http.StatusInternalServerError, "internal", "删除镜像文件失败: "+err.Error())
