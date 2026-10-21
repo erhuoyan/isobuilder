@@ -13,6 +13,7 @@ import {
   Popconfirm,
   Space,
   Tag,
+  Tooltip,
   Upload,
   message,
 } from 'antd';
@@ -27,6 +28,54 @@ import {
 } from '@/services/isobuilder';
 import type { Kickstart } from '@/services/types';
 import { formatBytes, formatDateTime } from '@/utils/format';
+
+interface Props {
+  kickstart: Kickstart;
+}
+
+/** 后端唯一认的 U 盘注入替换点（builder/pipeline.go 里写死）。 */
+const PAYLOAD_PLACEHOLDER = '%%PAYLOAD_SNIPPET%%';
+
+/**
+ * 后端会把 %%任意大写%% 都当成占位符列出来，但真正替换的只有两个名字。
+ * 其余的原样留在 kickstart 里，装机时静默失效 —— 这种笔误值得当场提示。
+ */
+const KNOWN_PLACEHOLDERS: Record<string, true> = {
+  '%%HOSTS_JSON_PLACEHOLDER%%': true,
+  [PAYLOAD_PLACEHOLDER]: true,
+};
+
+const unknownPlaceholders = (kickstart: Kickstart) =>
+  (kickstart.placeholders ?? []).filter((p) => !KNOWN_PLACEHOLDERS[p]);
+
+/**
+ * 模板能力。
+ *
+ * `%%HOSTS_JSON_PLACEHOLDER%%` 是准入门槛而非特性：模板缺了它上传就被拒、
+ * 构建也会失败，所有可用模板必然都有，展示它没有区分度。真正要看的是有没有
+ * payload 替换点 —— 有，项目的 payload_mode 才会生效。
+ */
+const CapabilityCell: React.FC<Props> = ({ kickstart }) => {
+  const hasPayload = (kickstart.placeholders ?? []).includes(PAYLOAD_PLACEHOLDER);
+  const unknown = unknownPlaceholders(kickstart);
+
+  return (
+    <Space size={6} wrap>
+      {hasPayload ? (
+        <Tag color="blue">支持 U 盘注入</Tag>
+      ) : (
+        <span style={{ color: 'rgba(0,0,0,0.35)' }}>—</span>
+      )}
+      {unknown.length > 0 && (
+        <Tooltip
+          title={`这些占位符构建时不会被替换，会原样留在 kickstart 里：${unknown.join('、')}`}
+        >
+          <Tag color="red">{unknown.length} 个未知占位符</Tag>
+        </Tooltip>
+      )}
+    </Space>
+  );
+};
 
 const KickstartsPage: React.FC = () => {
   const [kickstarts, setKickstarts] = useState<Kickstart[]>([]);
@@ -89,7 +138,7 @@ const KickstartsPage: React.FC = () => {
     {
       title: '名称',
       dataIndex: 'name',
-      width: 260,
+      width: 240,
       render: (_, record) => (
         <Space size={6}>
           <a onClick={() => handlePreview(record)}>{record.name}</a>
@@ -97,23 +146,12 @@ const KickstartsPage: React.FC = () => {
         </Space>
       ),
     },
-    { title: '架构', dataIndex: 'arch', width: 110, render: (_, r) => <code>{r.arch}</code> },
+    { title: '架构', dataIndex: 'arch', width: 100, render: (_, r) => <code>{r.arch}</code> },
     {
-      title: '占位符',
+      title: '能力',
       dataIndex: 'placeholders',
-      width: 280,
-      render: (_, record) =>
-        record.placeholders?.length ? (
-          <Space size={4} wrap>
-            {record.placeholders.map((p) => (
-              <Tag key={p} style={{ fontFamily: 'monospace', fontSize: 12 }}>
-                {p}
-              </Tag>
-            ))}
-          </Space>
-        ) : (
-          <span style={{ color: 'rgba(0,0,0,0.35)' }}>—</span>
-        ),
+      width: 220,
+      render: (_, record) => <CapabilityCell kickstart={record} />,
     },
     {
       title: '大小',
@@ -158,7 +196,12 @@ const KickstartsPage: React.FC = () => {
         title: '应答模板',
         subTitle: '内置与自定义的 kickstart 模板，构建时注入主机清单',
         extra: [
-          <Button key="upload" type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>
+          <Button
+            key="upload"
+            type="primary"
+            icon={<UploadOutlined />}
+            onClick={() => setUploadOpen(true)}
+          >
             上传模板
           </Button>,
         ],
@@ -171,7 +214,7 @@ const KickstartsPage: React.FC = () => {
         pagination={false}
         dataSource={kickstarts}
         columns={columns}
-        scroll={{ x: 1060 }}
+        scroll={{ x: 970 }}
         locale={{ emptyText: '还没有模板，先上传一个 .ks 文件' }}
       />
 
@@ -199,6 +242,7 @@ const KickstartsPage: React.FC = () => {
         </Upload>
         <div style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12, marginTop: 8 }}>
           模板必须包含 <code>%%HOSTS_JSON_PLACEHOLDER%%</code> 占位符，构建时会被替换为主机清单。
+          含 <code>%%PAYLOAD_SNIPPET%%</code> 的模板才能使用项目的 U 盘文件注入。
         </div>
       </ModalForm>
 
