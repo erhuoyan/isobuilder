@@ -22,7 +22,7 @@ const TRANSITIONAL: Record<string, true> = { downloading: true, hashing: true };
 type RegisterMode = 'url' | 'path';
 
 const IsosPage: React.FC = () => {
-  const actionRef = useRef<ActionType>();
+  const actionRef = useRef<ActionType>(null);
   const [isos, setIsos] = useState<Iso[]>([]);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<RegisterMode>('url');

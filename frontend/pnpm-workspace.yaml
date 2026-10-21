@@ -1,0 +1,8 @@
+# pnpm 12 requires an explicit allow-list before it will run dependency build
+# scripts. These four are the ones this project actually needs: core-js and
+# es5-ext ship a postinstall banner/check, esbuild unpacks its native binary.
+allowBuilds:
+  core-js: false
+  core-js-pure: false
+  es5-ext: false
+  esbuild: true

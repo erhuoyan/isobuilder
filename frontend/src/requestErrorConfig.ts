@@ -1,7 +1,6 @@
-import type { RequestConfig } from '@umijs/max';
+import type { RequestConfig, RequestOptions } from '@umijs/max';
 import { history } from '@umijs/max';
 import { message as antdMessage } from 'antd';
-import type { AxiosResponse } from 'axios';
 import { clearToken, getToken } from '@/services/auth';
 
 /** 后端统一响应信封，见 docs/API.md「通用约定」。 */
@@ -52,25 +51,29 @@ export const errorConfig: RequestConfig = {
   },
 
   requestInterceptors: [
-    (config) => {
+    (config: RequestOptions) => {
       const token = getToken();
       if (token) {
-        // RequestOptions['headers'] is a loose record; merging keeps caller headers.
-        config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
+        // RequestOptions['headers'] 是松散记录，展开合并可以保留调用方自带头部。
+        config.headers = {
+          ...(config.headers as Record<string, string> | undefined),
+          Authorization: `Bearer ${token}`,
+        };
       }
       return config;
     },
   ],
 
   responseInterceptors: [
-    (response: AxiosResponse) => {
-      const body = response.data;
+    (response) => {
+      const body: unknown = response.data;
 
       if (!isEnvelope(body)) return response;
 
       if (body.code === '200') {
-        // 调用方直接拿 data，不必层层解包。
-        response.data = body.data;
+        // 调用方直接拿 data，不必层层解包。data 的形状由调用处的泛型决定，
+        // 这里只做信封剥离，不做运行时校验。
+        (response as { data: unknown }).data = body.data;
         return response;
       }
 

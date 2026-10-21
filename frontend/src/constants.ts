@@ -38,7 +38,6 @@ export const BUILD_STATUS: Record<BuildStatus, { label: string; color: string }>
 };
 
 export const ISO_STATUS: Record<IsoStatus, { label: string; color: string }> = {
-  uploading: { label: '上传中', color: 'processing' },
   downloading: { label: '下载中', color: 'processing' },
   hashing: { label: '校验中', color: 'warning' },
   ready: { label: '可用', color: 'success' },

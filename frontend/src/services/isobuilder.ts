@@ -1,5 +1,6 @@
 import { request } from '@umijs/max';
 import type {
+  Artifact,
   Build,
   HostsValidation,
   Iso,
@@ -180,6 +181,14 @@ export async function cancelBuild(id: string) {
 
 export async function retryBuild(id: string) {
   return request<{ build: Build }>(`/api/builds/${id}/retry`, { method: 'POST' });
+}
+
+/* ----------------------------------------------------------- Artifact */
+
+/** 重新签发预签名 URL（链接会过期）。 */
+export async function fetchArtifact(id: string) {
+  const res = await request<{ artifact: Artifact }>(`/api/artifacts/${id}`, { method: 'GET' });
+  return res.artifact;
 }
 
 /** 日志全文；SSE 流由 `openBuildLog` 单独处理。 */

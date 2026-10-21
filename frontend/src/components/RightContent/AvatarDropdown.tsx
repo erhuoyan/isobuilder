@@ -15,7 +15,7 @@ export const AvatarDropdown: React.FC = () => {
   const onMenuClick: MenuProps['onClick'] = ({ key }) => {
     if (key === 'logout') {
       clearToken();
-      setInitialState((s) => ({ ...s, currentUser: undefined }));
+      setInitialState((s) => ({ ...s, currentUser: undefined }) as NonNullable<typeof s>);
       history.push('/login');
     }
   };

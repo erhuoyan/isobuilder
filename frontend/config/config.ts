@@ -2,6 +2,7 @@
 
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
+import type { IConfigFromPlugins } from '@@/core/pluginConfig';
 import defaultSettings from './defaultSettings';
 import proxy from './proxy';
 import routes from './routes';
@@ -14,7 +15,7 @@ const { UMI_ENV = 'dev' } = process.env;
  */
 const PUBLIC_PATH: string = '/';
 
-export default defineConfig({
+const config: IConfigFromPlugins = defineConfig({
   hash: true,
 
   publicPath: PUBLIC_PATH,
@@ -29,6 +30,13 @@ export default defineConfig({
   outputPath: '../backend/web/dist',
 
   ignoreMomentLocale: true,
+
+  /**
+   * @name esbuild 压缩的 IIFE 包装
+   * @description umi 4.7 的 esbuild 压缩会把不同 chunk 里的 helper 重名，
+   * 打包后出现 esbuildHelperChecker 冲突并直接失败；开启后每个 chunk 独立作用域。
+   */
+  esbuildMinifyIIFE: true,
 
   proxy: proxy[UMI_ENV as keyof typeof proxy],
 
@@ -89,3 +97,5 @@ export default defineConfig({
     __APP_VERSION__: require('./../package.json').version,
   },
 });
+
+export default config;

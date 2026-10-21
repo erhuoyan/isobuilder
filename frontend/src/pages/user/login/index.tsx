@@ -40,7 +40,7 @@ const Login: React.FC = () => {
       return false;
     }
 
-    await setInitialState((s) => ({ ...s, currentUser: { name: '运维' } }));
+    await setInitialState((s) => ({ ...s, currentUser: { name: '运维' } }) as NonNullable<typeof s>);
 
     const params = new URL(window.location.href).searchParams;
     history.push(params.get('redirect') || '/projects');

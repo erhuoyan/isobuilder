@@ -13,7 +13,7 @@ import BuildStatusTag from '@/components/BuildStatusTag';
 const POLL_INTERVAL = 3000;
 
 const ProjectsPage: React.FC = () => {
-  const actionRef = useRef<ActionType>();
+  const actionRef = useRef<ActionType>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [latestBuilds, setLatestBuilds] = useState<Record<string, Build>>({});
 
