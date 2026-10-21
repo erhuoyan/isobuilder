@@ -35,7 +35,7 @@ spec:
         - name: isobuilder
           # 镜像 tag 形如 <版本号>-<commit>-<时间>，由 deploy/build-image.sh 生成。
           # 升级：kubectl -n isobuilder set image deployment/isobuilder isobuilder=<新 tag>
-          image: hub-pub.jdcloud.com/iaas-jf/isobuilder:v0.4.5-d127280-202610190320
+          image: hub-pub.jdcloud.com/iaas-jf/isobuilder:v0.4.8-31f731c-202610210157
           imagePullPolicy: IfNotPresent
           # 所有配置都在 -c 指定的文件里（addr、data_dir、database_url 等），
           # 不使用任何环境变量：文件缺失或解析失败会直接退出，配置来源唯一、
