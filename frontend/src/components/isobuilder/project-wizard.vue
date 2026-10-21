@@ -85,6 +85,21 @@ const canSelectIso = (iso: Api.IsoBuilder.Iso) => iso.status === 'ready';
 const canSelectKickstart = (kickstart: Api.IsoBuilder.Kickstart) =>
   kickstart.arch === 'any' || kickstart.arch === form.value.arch;
 
+/** 后端唯一认的 U 盘注入替换点（builder/pipeline.go 里写死）。 */
+const PAYLOAD_PLACEHOLDER = '%%PAYLOAD_SNIPPET%%';
+
+/**
+ * 后端会把 %%任意大写%% 都当成占位符列出来，但真正替换的只有两个名字。
+ * 其余的原样留在 kickstart 里，装机时静默失效 —— 这种笔误值得当场提示。
+ */
+const KNOWN_PLACEHOLDERS: Record<string, true> = {
+  '%%HOSTS_JSON_PLACEHOLDER%%': true,
+  [PAYLOAD_PLACEHOLDER]: true
+};
+
+const unknownPlaceholders = (kickstart: Api.IsoBuilder.Kickstart) =>
+  (kickstart.placeholders ?? []).filter(placeholder => !KNOWN_PLACEHOLDERS[placeholder]);
+
 const hostHint = computed(() => {
   if (!hostsRaw.value.trim()) return '请填写主机清单。';
 
@@ -416,19 +431,32 @@ onMounted(async () => {
               </NButton>
             </div>
 
-            <div v-if="kickstart.placeholders.length" class="flex flex-wrap items-center gap-6px">
-              <span class="text-12px text-gray-500">占位符</span>
+            <!--
+              只展示有信息量的能力，不再平铺占位符原文：
+              %%HOSTS_JSON_PLACEHOLDER%% 是准入门槛（缺了上传就被拒、构建也会失败），
+              所有可用模板都有，展示它没有区分度。真正要看的是模板里有没有
+              %%PAYLOAD_SNIPPET%% —— 有替换点，项目的 payload_mode 才会生效。
+            -->
+            <div class="flex flex-wrap items-center gap-6px">
               <NTag
-                v-for="placeholder in kickstart.placeholders"
-                :key="placeholder"
+                v-if="kickstart.placeholders.includes(PAYLOAD_PLACEHOLDER)"
                 size="tiny"
+                type="info"
                 :bordered="false"
-                class="font-mono"
               >
-                {{ placeholder }}
+                支持 U 盘注入
               </NTag>
+              <NTooltip v-if="unknownPlaceholders(kickstart).length">
+                <template #trigger>
+                  <NTag size="tiny" type="error" :bordered="false">
+                    {{ unknownPlaceholders(kickstart).length }} 个未知占位符
+                  </NTag>
+                </template>
+                这些占位符构建时不会被替换，会原样留在 kickstart 里：{{
+                  unknownPlaceholders(kickstart).join('、')
+                }}
+              </NTooltip>
             </div>
-            <div v-else class="text-12px text-gray-400">无占位符</div>
 
             <div v-if="!canSelectKickstart(kickstart)" class="text-12px text-warning">
               该模板仅适用于 {{ kickstart.arch }} 架构。

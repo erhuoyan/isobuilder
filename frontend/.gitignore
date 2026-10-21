@@ -34,3 +34,7 @@ yarn.lock
 
 .VSCodeCounter
 src-tauri/target
+
+# Umi 临时产物（feat/antd-pro 分支的构建会在同一目录生成）
+.umi
+.umi-production
