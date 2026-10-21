@@ -25,6 +25,8 @@ const notFound = ref(false);
 const building = ref(false);
 const project = ref<Api.IsoBuilder.Project | null>(null);
 const builds = ref<Api.IsoBuilder.Build[]>([]);
+/** 已经构建过就说明这是「再次构建」，改完配置可以直接重跑 */
+const hasBuilt = computed(() => builds.value.length > 0);
 
 const activeBuild = computed(
   () => builds.value.find(item => item.status === 'running' || item.status === 'queued') || null
@@ -200,7 +202,7 @@ onMounted(async () => {
               <template #icon>
                 <SvgIcon icon="mdi:hammer-wrench" />
               </template>
-              {{ activeBuild ? '构建进行中' : '开始构建' }}
+              {{ activeBuild ? '构建进行中' : hasBuilt ? '再次构建' : '开始构建' }}
             </NButton>
             <NPopconfirm positive-text="删除" negative-text="取消" @positive-click="handleDelete">
               <template #trigger>
@@ -240,7 +242,9 @@ onMounted(async () => {
               <div class="text-14px">{{ project.iso.name }}</div>
               <div class="font-mono text-12px text-gray-500">{{ project.iso.filename }}</div>
             </template>
-            <NTag v-else size="small" type="error" :bordered="false">镜像已删除</NTag>
+            <!-- 草稿项目还没选镜像，与「选过但被删了」是两回事 -->
+            <NTag v-else-if="project.iso_id" size="small" type="error" :bordered="false">镜像已删除</NTag>
+            <span v-else class="text-13px text-gray-400">未选择</span>
           </NDescriptionsItem>
           <NDescriptionsItem label="kickstart">
             <template v-if="project.kickstart">

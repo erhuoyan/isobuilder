@@ -2,12 +2,14 @@
 import { computed, h, ref, watch } from 'vue';
 import { useDebounceFn } from '@vueuse/core';
 import * as XLSX from 'xlsx';
-import { PREVIEW_COLUMN_SET, PREVIEW_COLUMNS, TEMPLATE_COLUMNS, TEMPLATE_HEADER_SET } from '@/constants/hosts-template';
+import { PREVIEW_COLUMN_SET, TEMPLATE_COLUMNS, TEMPLATE_HEADER_SET } from '@/constants/hosts-template';
 import { fetchValidateHosts } from '@/service/api';
-import { hostsFormatOptions } from '@/constants/isobuilder';
 
 /** the idle time before the inventory is validated automatically */
 const VALIDATE_DEBOUNCE = 500;
+
+/** 本地文件与电子表格共用一个入口，按扩展名分流 */
+const FILE_ACCEPT = '.yaml,.yml,.json,.txt,.xlsx,.xls,.csv';
 
 const PLACEHOLDER = `hosts:
   - sn: SN0000000
@@ -17,7 +19,7 @@ const PLACEHOLDER = `hosts:
       netmask: 255.255.255.0
       gateway: 172.16.0.1
       mac: 00:11:22:33:44:55
-    bmc_ip: 10.0.0.11
+  
   - sn: SN0000001
     hostname: node-02
     network:
@@ -29,10 +31,8 @@ const PLACEHOLDER = `hosts:
           - 00:11:22:33:44:66
           - 00:11:22:33:44:67`;
 
-/** the raw inventory text, YAML or JSON */
+/** the raw inventory text, YAML or JSON (格式由后端自动识别) */
 const value = defineModel<string>('value', { required: true });
-/** the format sent to the backend, `auto` lets the backend detect it */
-const format = defineModel<Api.IsoBuilder.HostsFormatInput>('format', { required: true });
 
 const emit = defineEmits<{
   validate: [result: Api.IsoBuilder.ValidateHostsResult | null];
@@ -40,35 +40,36 @@ const emit = defineEmits<{
 
 const result = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
 const validating = ref(false);
-/** the `format + content` pair of the last successful validation, empty when stale */
-const validatedKey = ref('');
-/** the last validation request failed, the input has not been checked at all */
+/** the content of the last successful validation, empty when stale */
+const validatedContent = ref('');
 const requestFailed = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 /** the sequence of the newest validation request, the stale responses are dropped */
 let requestSeq = 0;
 
-const hasContent = computed(() => value.value.trim().length > 0);
+const text = computed(() => value.value ?? '');
 
-const currentKey = computed(() => `${format.value}\u0000${value.value}`);
+const hasContent = computed(() => text.value.trim().length > 0);
 
 /** the input has been edited since the last validation, the shown result is outdated */
-const stale = computed(() => hasContent.value && !validating.value && currentKey.value !== validatedKey.value);
+const stale = computed(
+  () => hasContent.value && !validating.value && text.value !== validatedContent.value
+);
 
-const errorCount = computed(() => result.value?.errors.length ?? 0);
+/** 校验通过的主机数，用于顶部一行摘要 */
+const hostCount = computed(() => (result.value?.ok ? result.value.hosts_count : 0));
 
-/** invalidate the current result, the wizard must not save an unvalidated inventory */
 function invalidate() {
   requestSeq += 1;
-  validatedKey.value = '';
+  validatedContent.value = '';
   validating.value = false;
   requestFailed.value = false;
   emit('validate', null);
 }
 
 async function runValidate() {
-  const content = value.value;
+  const content = text.value;
 
   if (!content.trim()) {
     result.value = null;
@@ -76,10 +77,8 @@ async function runValidate() {
     return;
   }
 
-  const key = currentKey.value;
-
-  // the content has already been validated, reuse the result instead of hitting the backend again
-  if (key === validatedKey.value && result.value) {
+  // 内容没变就复用上次结果，不重复打后端
+  if (content === validatedContent.value && result.value) {
     emit('validate', result.value);
     return;
   }
@@ -87,22 +86,21 @@ async function runValidate() {
   const seq = ++requestSeq;
   validating.value = true;
 
-  const { data, error } = await fetchValidateHosts(content, format.value);
+  const { data, error } = await fetchValidateHosts(content, 'auto');
 
-  // a newer request has been fired meanwhile, drop this response
   if (seq !== requestSeq) return;
 
   validating.value = false;
 
   if (error) {
-    validatedKey.value = '';
+    validatedContent.value = '';
     result.value = null;
     requestFailed.value = true;
     emit('validate', null);
     return;
   }
 
-  validatedKey.value = key;
+  validatedContent.value = content;
   result.value = data;
   emit('validate', data);
 }
@@ -110,7 +108,7 @@ async function runValidate() {
 const debouncedValidate = useDebounceFn(runValidate, VALIDATE_DEBOUNCE);
 
 watch(
-  [value, format],
+  value,
   () => {
     if (!hasContent.value) {
       result.value = null;
@@ -123,6 +121,8 @@ watch(
   },
   { immediate: true }
 );
+
+/** ─── 导入：一次点击，按扩展名分流 ─────────────────────────────── */
 
 function triggerFileSelect() {
   fileInputRef.value?.click();
@@ -137,6 +137,14 @@ async function handleFileChange(event: Event) {
 
   if (!file) return;
 
+  const name = file.name.toLowerCase();
+  const isSpreadsheet = name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv');
+
+  if (isSpreadsheet) {
+    await importSpreadsheet(file);
+    return;
+  }
+
   try {
     value.value = await file.text();
     window.$message?.success(`已读入 ${file.name}`);
@@ -145,32 +153,32 @@ async function handleFileChange(event: Event) {
   }
 }
 
-/** ─── 表格导入（xlsx/csv）────────────────────────────────────────── */
+/** ─── 导出：把编辑框里的内容存成文件 ───────────────────────────── */
+
+function handleExport() {
+  if (!hasContent.value) {
+    window.$message?.warning('主机清单还是空的');
+    return;
+  }
+
+  // 内容本来就是 YAML/JSON 原文，直接原样下载，不做任何转换。
+  const blob = new Blob([text.value], { type: 'text/yaml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'hosts.yaml';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** ─── 电子表格 → YAML ─────────────────────────────────────────── */
 
 interface SpreadsheetRow {
   [column: string]: string | number | undefined;
 }
 
-
-const tableInputRef = ref<HTMLInputElement | null>(null);
-const tableFile = ref<File | null>(null);
 const tableRows = ref<SpreadsheetRow[]>([]);
 const tableHeaders = ref<string[]>([]);
-const columnMapping = ref<Record<string, string>>({});
-const tableShow = ref(false);
-const tableParsing = ref(false);
-
-function triggerTableSelect() {
-  tableInputRef.value?.click();
-}
-
-/** bond 判定：mac1/mac2 同时映射到 → bond 模式；单 mac → 单口 */
-function detectNetworkMode(mapping: Record<string, string>) {
-  const fields = new Set(Object.values(mapping));
-  const hasBond = fields.has('mac1') && fields.has('mac2');
-  const hasSingle = fields.has('mac');
-  return hasBond ? 'bond' : hasSingle ? 'single' : 'unknown';
-}
 
 function cellText(row: SpreadsheetRow, column: string): string {
   const v = row[column];
@@ -197,17 +205,12 @@ function extractHost(rows: SpreadsheetRow[], index: number) {
   return { get, inherit };
 }
 
-/** 解析表格文件 */
-async function handleTableFileChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = '';
+/** quote one string scalar as a YAML double-quoted token */
+function yamlQuote(text: string): string {
+  return `"${text.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
 
-  if (!file) return;
-
-  tableFile.value = file;
-  tableParsing.value = true;
-
+async function importSpreadsheet(file: File) {
   try {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
@@ -216,31 +219,28 @@ async function handleTableFileChange(event: Event) {
 
     if (!rows.length) {
       window.$message?.error('表格没有数据行');
-      tableParsing.value = false;
       return;
     }
 
     const headers = Object.keys(rows[0]);
-    // 协议表头按模板原样严格匹配，区分大小写，仅容忍前后空格
+    // 表头按模板原样严格匹配，区分大小写，仅容忍前后空格
     const originals = new Map(headers.map(header => [header.trim(), header]));
 
     const missing = TEMPLATE_COLUMNS.filter(col => !originals.has(col));
     if (missing.length) {
       window.$message?.error(
-        `表头不符合模板：缺少列 ${missing.join('、')}。实际表头：${headers.join('、')}。请下载模板，列名按模板原样填写（区分大小写）。`
+        `表格缺少列 ${missing.join('、')}。实际表头：${headers.join('、')}。列名需按模板原样填写（区分大小写）。`
       );
-      tableParsing.value = false;
       return;
     }
 
-    // 把行数据按协议列重排：key = 协议表头，值 = 原行对应单元格
+    // 按协议列重排，非协议列原样保留（进 extra，后端透传）
     tableRows.value = rows.map(row => {
       const rebased: SpreadsheetRow = {};
       TEMPLATE_COLUMNS.forEach(col => {
         const original = originals.get(col);
         rebased[col] = original === undefined ? '' : row[original];
       });
-      // 非协议列原样保留（进 extra）
       headers.forEach(header => {
         if (!TEMPLATE_HEADER_SET.has(header.trim())) {
           rebased[header] = row[header];
@@ -249,17 +249,19 @@ async function handleTableFileChange(event: Event) {
       return rebased;
     });
 
-    tableHeaders.value = [...TEMPLATE_COLUMNS, ...headers.filter(header => !TEMPLATE_HEADER_SET.has(header.trim()))];
-    tableShow.value = true;
+    tableHeaders.value = [
+      ...TEMPLATE_COLUMNS,
+      ...headers.filter(header => !TEMPLATE_HEADER_SET.has(header.trim()))
+    ];
+
+    generateYamlFromTable();
   } catch {
-    window.$message?.error('解析表格失败，请确认为 .xlsx 或 .csv 格式');
-  } finally {
-    tableParsing.value = false;
+    window.$message?.error('解析表格失败，请确认为 .xlsx / .xls / .csv 格式');
   }
 }
 
-/** 映射确认 → 生成 YAML 写入编辑器 */
-function handleTableConfirm() {
+/** 表格 → YAML 清单，直接写进编辑框，用户可继续手工微调 */
+function generateYamlFromTable() {
   const probe = extractHost(tableRows.value, 0);
   const mode = probe.get('mac1') && probe.get('mac2') ? 'bond' : probe.get('mac') ? 'single' : 'unknown';
 
@@ -304,85 +306,19 @@ function handleTableConfirm() {
     } else {
       lines.push(`      mac: ${get('mac')}`);
     }
-
   });
 
-  format.value = 'yaml';
-  value.value = lines.join('\n') + '\n';
-  tableShow.value = false;
-  window.$message?.success(`已从表格生成 ${tableRows.value.length} 台主机的清单，请检查校验结果`);
+  value.value = `${lines.join('\n')}\n`;
+  window.$message?.success(`已从表格生成 ${tableRows.value.length} 台主机的清单`);
 }
 
-/** quote one string scalar as a YAML double-quoted token */
-function yamlQuote(value: string): string {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-}
-
-function handleTableCancel() {
-  tableShow.value = false;
-  tableFile.value = null;
-  tableRows.value = [];
-  tableHeaders.value = [];
-  columnMapping.value = {};
-}
-
-function handleTemplateDownload() {
-  const data = [TEMPLATE_COLUMNS];
-  const sheet = XLSX.utils.aoa_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, '主机清单');
-  XLSX.writeFile(workbook, 'isobuilder-主机清单模板.xlsx');
-}
-
-
-/**
- * 与生成 YAML 时一致的下继承字段：同批次共享值（网段、网关）常只在首行填写
- * 或做纵向合并。预览必须展示继承后的值，与最终生成的清单保持同一份事实。
- */
-const INHERITED_PREVIEW_FIELDS = new Set(['ip', 'netmask', 'gateway']);
-
-/** 不参与装机、也不写入清单的列（协议内未用的台账列 + 协议外的附加列） */
+/** 不参与装机的列，提示用户这些值会被忽略 */
 const droppedColumns = computed(() => tableHeaders.value.filter(column => !PREVIEW_COLUMN_SET.has(column)));
-
-const droppedColumnsText = computed(() => (droppedColumns.value.length ? `：${droppedColumns.value.join('、')}` : ''));
-
-/** 预览表：前 10 行，仅展示装机使用的列，宽度按内容计算，超出部分横向滚动 */
-const tablePreviewColumns = computed(() =>
-  PREVIEW_COLUMNS.map(header => {
-    const widest = tablePreviewRows.value.reduce(
-      (max, row) => Math.max(max, cellText(row, header).length),
-      String(header).length
-    );
-    const width = Math.max(96, Math.min(240, widest * 8 + 28));
-    return {
-      key: header,
-      title: header,
-      width,
-      render: (row: SpreadsheetRow) =>
-        h('span', { class: 'font-mono text-12px whitespace-nowrap' }, cellText(row, header))
-    };
-  })
+const droppedColumnsText = computed(() =>
+  droppedColumns.value.length ? `：${droppedColumns.value.join('、')}` : ''
 );
 
-/** 内容总宽超出容器时开启横向滚动，列不再被压缩重叠 */
-const previewScrollX = computed(() =>
-  tablePreviewColumns.value.reduce((total, col) => total + col.width, 32)
-);
-
-const tablePreviewRows = computed(() =>
-  tableRows.value.slice(0, 10).map((row, index) => {
-    const { get, inherit } = extractHost(tableRows.value, index);
-    const display: SpreadsheetRow = { ...row };
-    INHERITED_PREVIEW_FIELDS.forEach(field => {
-      if (!get(field)) display[field] = inherit(field);
-    });
-    return display;
-  })
-);
-
-function handleClear() {
-  value.value = '';
-}
+const errorCount = computed(() => result.value?.errors.length ?? 0);
 
 /** the label of one error, an inventory level error carries an empty field */
 function hostLabel(error: Api.IsoBuilder.HostError) {
@@ -393,61 +329,25 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
 <template>
   <div class="flex flex-col gap-12px">
     <div class="flex flex-wrap items-center justify-between gap-8px">
-      <NRadioGroup v-model:value="format" size="small">
-        <NRadioButton v-for="option in hostsFormatOptions" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </NRadioButton>
-      </NRadioGroup>
+      <span class="text-13px text-gray-500">粘贴、导入文件或表格；停止输入 0.5 秒后自动校验</span>
 
-      <NSpace :size="8" :wrap="true">
+      <NSpace :size="8">
         <NButton size="small" @click="triggerFileSelect">
           <template #icon>
             <SvgIcon icon="mdi:file-upload-outline" />
           </template>
-          读入本地文件
+          导入
         </NButton>
-        <NButton size="small" @click="triggerTableSelect">
-          <template #icon>
-            <SvgIcon icon="mdi:table-arrow-right" />
-          </template>
-          导入表格
-        </NButton>
-        <NButton size="small" @click="handleTemplateDownload">
+        <NButton size="small" :disabled="!hasContent" @click="handleExport">
           <template #icon>
             <SvgIcon icon="mdi:file-download-outline" />
           </template>
-          下载模板
-        </NButton>
-        <NButton size="small" :disabled="!hasContent" @click="handleClear">
-          <template #icon>
-            <SvgIcon icon="mdi:eraser" />
-          </template>
-          清空
-        </NButton>
-        <NButton size="small" type="primary" :loading="validating" :disabled="!hasContent" @click="runValidate">
-          <template #icon>
-            <SvgIcon icon="mdi:check-decagram-outline" />
-          </template>
-          立即校验
+          导出
         </NButton>
       </NSpace>
     </div>
 
-    <input
-      ref="fileInputRef"
-      type="file"
-      accept=".yaml,.yml,.json,.txt"
-      class="hidden"
-      @change="handleFileChange"
-    />
-
-    <input
-      ref="tableInputRef"
-      type="file"
-      accept=".xlsx,.xls,.csv"
-      class="hidden"
-      @change="handleTableFileChange"
-    />
+    <input ref="fileInputRef" type="file" :accept="FILE_ACCEPT" class="hidden" @change="handleFileChange" />
 
     <NInput
       v-model:value="value"
@@ -458,80 +358,57 @@ function hostLabel(error: Api.IsoBuilder.HostError) {
       :placeholder="PLACEHOLDER"
     />
 
-    <NAlert v-if="!hasContent" size="small" type="default" :bordered="false" :show-icon="false">
-      粘贴或读入主机清单（YAML / JSON），停止输入 500 毫秒后自动校验。
-    </NAlert>
-
-    <NAlert v-else-if="validating" size="small" type="info" :bordered="false">
-      正在校验主机清单…
-    </NAlert>
+    <NAlert v-if="validating" size="small" type="info" :bordered="false">正在校验主机清单…</NAlert>
 
     <NAlert v-else-if="requestFailed" size="small" type="error" :bordered="false">
       校验请求失败，请检查清单格式后重试。
     </NAlert>
 
     <NAlert v-else-if="stale" size="small" type="warning" :bordered="false">
-      输入已改动，等待自动校验完成后再进入下一步。
+      清单已修改，等待自动校验…
     </NAlert>
 
-    <NAlert v-else-if="result" size="small" :type="result.ok ? 'success' : 'error'" :bordered="false">
-      <span class="font-mono">{{ result.hosts_count }}</span> 台主机 · 识别格式
-      <span class="font-mono">{{ result.format.toUpperCase() }}</span> ·
-      {{ result.ok ? '校验通过' : `校验未通过，共 ${errorCount} 处问题` }}
-    </NAlert>
+    <template v-else-if="result?.ok">
+      <NAlert size="small" type="success" :bordered="false">
+        校验通过：{{ hostCount }} 台主机
+      </NAlert>
 
-    <NAlert v-else size="small" type="warning" :bordered="false">
-      主机清单尚未校验。
-    </NAlert>
+      <NDataTable
+        :columns="[
+          { key: 'sn', title: 'SN', width: 160, render: (r: Api.IsoBuilder.HostSummary) => h('span', { class: 'font-mono text-12px' }, r.sn) },
+          { key: 'hostname', title: '主机名', width: 140 },
+          { key: 'ip', title: 'IP', width: 140, render: (r: Api.IsoBuilder.HostSummary) => h('span', { class: 'font-mono text-12px' }, r.ip) },
+          { key: 'gateway', title: '网关', width: 140, render: (r: Api.IsoBuilder.HostSummary) => h('span', { class: 'font-mono text-12px' }, r.gateway || '—') },
+          { key: 'network_mode', title: '网络', width: 110, render: (r: Api.IsoBuilder.HostSummary) => (r.network_mode === 'bond' ? `bond (${r.mac_count})` : '单口') },
+          { key: 'disk_gb', title: '磁盘', width: 100, render: (r: Api.IsoBuilder.HostSummary) => (r.disk_gb ? `${r.disk_gb} GB` : '—') },
+          { key: 'bmc_ip', title: 'BMC', width: 140, render: (r: Api.IsoBuilder.HostSummary) => h('span', { class: 'font-mono text-12px' }, r.bmc_ip || '—') }
+        ]"
+        :data="result.hosts_summary"
+        :row-key="(row: Api.IsoBuilder.HostSummary) => row.sn"
+        size="small"
+        :bordered="false"
+        :single-line="false"
+        :max-height="260"
+      />
+    </template>
 
-    <NDrawer v-model:show="tableShow" placement="right" width="min(100vw, 1440px)">
-      <NDrawerContent :title="`表格导入 · ${tableFile?.name ?? ''}`" :native-scrollbar="false" closable>
-        <NAlert type="info" :bordered="false" class="mb-16px">
-          共解析出 {{ tableRows.length }} 行、{{ tableHeaders.length }} 列。预览仅展示装机使用的列；
-          其余{{ droppedColumnsText }} 不参与装机，不会写入主机清单。
-        </NAlert>
-
-        <div class="mb-8px text-13px text-gray-500">数据预览（前 10 行）：</div>
-        <NDataTable
-          size="small"
-          bordered
-          :max-height="240"
-          :scroll-x="previewScrollX"
-          :columns="tablePreviewColumns"
-          :data="tablePreviewRows"
-          :row-key="(row: SpreadsheetRow) => tablePreviewRows.indexOf(row)"
-        />
-
-        <template #footer>
-          <NSpace justify="end">
-            <NButton @click="handleTableCancel">取消</NButton>
-            <NButton type="primary" :loading="tableParsing" @click="handleTableConfirm">生成主机清单</NButton>
-          </NSpace>
-        </template>
-      </NDrawerContent>
-    </NDrawer>
-
-    <NList v-if="result && errorCount" bordered size="small">
-      <NListItem v-for="(error, index) in result.errors" :key="`${error.index}-${error.field}-${index}`">
-        <div class="flex flex-wrap items-center gap-8px">
-          <span class="error-text font-mono font-500">{{ hostLabel(error) }}</span>
-          <code v-if="error.field" class="error-text font-mono text-12px">{{ error.field }}</code>
-          <span class="error-text">{{ error.message }}</span>
+    <template v-else-if="result">
+      <NAlert size="small" type="error" :bordered="false">
+        校验失败，共 {{ errorCount }} 处问题
+      </NAlert>
+      <div class="max-h-200px flex flex-col gap-4px overflow-y-auto">
+        <div v-for="(error, index) in result.errors" :key="index" class="text-12px text-red-500">
+          {{ hostLabel(error) }} · {{ error.field || '清单' }}：{{ error.message }}
         </div>
-      </NListItem>
-    </NList>
-
-    <div v-if="result && result.hosts_summary.length" class="flex flex-col gap-8px">
-      <div class="text-13px text-gray-500">
-        解析结果（共 <span class="font-mono">{{ result.hosts_summary.length }}</span> 台）
       </div>
-      <HostSummaryTable :hosts="result.hosts_summary" :errors="result.errors" :loading="validating" :max-height="360" />
-    </div>
+    </template>
+
+    <NAlert v-if="tableRows.length" size="small" type="default" :bordered="false">
+      已从表格读取 {{ tableRows.length }} 行，其中 {{ droppedColumns.length }} 列不参与装机，会被忽略{{
+        droppedColumnsText
+      }}。
+    </NAlert>
   </div>
 </template>
 
-<style lang="scss" scoped>
-.error-text {
-  color: rgb(var(--error-color));
-}
-</style>
+<style scoped></style>

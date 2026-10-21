@@ -49,7 +49,6 @@ const payloadModeOptions: SelectOption[] = [
   { label: '卷标优先，未命中则扫描', value: 'auto' }
 ];
 const hostsRaw = ref('');
-const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
 const postScript = ref('');
 /** 脚本库（可复用）；selectedScriptId 为本项目选中的条目 */
@@ -125,6 +124,10 @@ const canGoNext = computed(() => {
   }
 });
 
+/** 只要填了名称就能存草稿；完整性由构建时把关 */
+const canSaveDraft = computed(() => Boolean(form.value.name.trim()));
+
+/** 完整保存（创建后可直接构建）要求三项齐全且清单校验通过 */
 const canSave = computed(
   () => Boolean(form.value.name.trim()) && Boolean(form.value.iso_id) && Boolean(form.value.kickstart_id) && !hostHint.value
 );
@@ -210,8 +213,8 @@ async function loadScripts() {
   if (!error) scripts.value = data.scripts;
 }
 
-async function handleSave() {
-  if (!canSave.value) return;
+async function handleSave(draft = false) {
+  if (draft ? !canSaveDraft.value : !canSave.value) return;
 
   saving.value = true;
 
@@ -227,7 +230,8 @@ async function handleSave() {
     script_id: selectedScriptId.value,
     payload_mode: form.value.payload_mode,
     hosts_raw: hostsRaw.value,
-    hosts_format: hostsFormat.value
+    // 格式交给后端自动识别，编辑器不再让用户选
+    hosts_format: 'auto'
   };
 
   const { data, error } = await fetchCreateProject(payload);
@@ -235,7 +239,8 @@ async function handleSave() {
   saving.value = false;
 
   if (error) return;
-  window.$message?.success('项目已创建');
+
+  window.$message?.success(draft ? '已保存草稿，随时可以回来继续' : '项目已创建');
   routerPushByKey('project-detail', { params: { id: data.project.id } });
 }
 
@@ -284,7 +289,15 @@ onMounted(async () => {
           <div class="text-16px font-500">第 {{ currentStep + 1 }} / {{ steps.length }} 步 · {{ currentStepInfo.title }}</div>
           <div class="mt-4px text-13px text-gray-500">{{ currentStepInfo.description }}</div>
         </div>
-        <NButton @click="handleCancel">取消</NButton>
+        <NSpace :size="8">
+          <NButton :loading="saving" :disabled="!canSaveDraft" @click="handleSave(true)">
+            <template #icon>
+              <SvgIcon icon="mdi:content-save-outline" />
+            </template>
+            保存草稿
+          </NButton>
+          <NButton @click="handleCancel">取消</NButton>
+        </NSpace>
       </div>
 
       <div class="overflow-x-auto pb-4px">
@@ -467,7 +480,7 @@ onMounted(async () => {
 
       <!-- 4. 主机清单 -->
       <div v-else-if="currentStep === 3" class="flex flex-col gap-12px">
-        <HostsEditor v-model:value="hostsRaw" v-model:format="hostsFormat" @validate="onValidateHosts" />
+        <HostsEditor v-model:value="hostsRaw" @validate="onValidateHosts" />
       </div>
 
       <!-- 5. 自定义脚本 -->
@@ -543,9 +556,9 @@ onMounted(async () => {
             <SvgIcon icon="mdi:chevron-right" />
           </template>
         </NButton>
-        <NButton v-else type="primary" :loading="saving" :disabled="!canSave" @click="handleSave">
+        <NButton v-else type="primary" :loading="saving" :disabled="!canSave" @click="handleSave()">
           <template #icon>
-            <SvgIcon icon="mdi:content-save-outline" />
+            <SvgIcon icon="mdi:check-circle-outline" />
           </template>
           创建项目
         </NButton>

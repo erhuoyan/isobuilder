@@ -231,32 +231,35 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 	}
 	p.Arch = arch
 
+	// 草稿：项目允许先只填名称再逐步补齐，构建时才要求完整
+	// （见 handleCreateBuild 的 project_incomplete）。所以镜像与模板都是
+	// 「填了就校验，没填就留空」，而不是必填。
 	isoID := pick(req.IsoID, p.IsoID)
-	if isoID == "" {
-		return p, newAPIErr(http.StatusBadRequest, "missing_iso", "请选择基础镜像")
-	}
-	iso, err := s.store.GetISO(isoID)
-	if err != nil {
-		return p, newAPIErr(http.StatusBadRequest, "invalid_iso", "所选基础镜像不存在")
-	}
-	if iso.Arch != arch {
-		return p, newAPIErr(http.StatusBadRequest, "arch_mismatch", fmt.Sprintf("基础镜像 %s 是 %s 架构，与项目架构 %s 不一致", iso.Filename, iso.Arch, arch))
-	}
-	if iso.Status == model.IsoError {
-		return p, newAPIErr(http.StatusBadRequest, "invalid_iso", "基础镜像校验失败，请重新上传: "+iso.Error)
+	var iso model.ISO
+	if isoID != "" {
+		loaded, err := s.store.GetISO(isoID)
+		if err != nil {
+			return p, newAPIErr(http.StatusBadRequest, "invalid_iso", "所选基础镜像不存在")
+		}
+		if loaded.Arch != arch {
+			return p, newAPIErr(http.StatusBadRequest, "arch_mismatch", fmt.Sprintf("基础镜像 %s 是 %s 架构，与项目架构 %s 不一致", loaded.Filename, loaded.Arch, arch))
+		}
+		if loaded.Status == model.IsoError {
+			return p, newAPIErr(http.StatusBadRequest, "invalid_iso", "基础镜像校验失败，请重新上传: "+loaded.Error)
+		}
+		iso = loaded
 	}
 	p.IsoID = isoID
 
 	ksID := pick(req.KickstartID, p.KickstartID)
-	if ksID == "" {
-		return p, newAPIErr(http.StatusBadRequest, "missing_kickstart", "请选择 kickstart 模板")
-	}
-	ks, err := s.store.GetKickstart(ksID)
-	if err != nil {
-		return p, newAPIErr(http.StatusBadRequest, "invalid_kickstart", "所选 kickstart 模板不存在")
-	}
-	if ks.Arch != "any" && ks.Arch != arch {
-		return p, newAPIErr(http.StatusBadRequest, "kickstart_arch_mismatch", fmt.Sprintf("模板 %s 面向 %s，与项目架构 %s 不一致", ks.Name, ks.Arch, arch))
+	if ksID != "" {
+		ks, err := s.store.GetKickstart(ksID)
+		if err != nil {
+			return p, newAPIErr(http.StatusBadRequest, "invalid_kickstart", "所选 kickstart 模板不存在")
+		}
+		if ks.Arch != "any" && ks.Arch != arch {
+			return p, newAPIErr(http.StatusBadRequest, "kickstart_arch_mismatch", fmt.Sprintf("模板 %s 面向 %s，与项目架构 %s 不一致", ks.Name, ks.Arch, arch))
+		}
 	}
 	p.KickstartID = ksID
 
@@ -313,17 +316,27 @@ func (s *Server) buildProject(req projectRequest, base *model.Project) (model.Pr
 	if format != "yaml" && format != "json" {
 		return p, newAPIErr(http.StatusBadRequest, "invalid_format", `hosts_format 必须是 "yaml"、"json" 或 "auto"`)
 	}
-	res := hosts.Parse(raw, format)
-	if !res.OK {
-		return p, newAPIErr(http.StatusBadRequest, "invalid_hosts", firstHostError(res)).
-			with(map[string]any{"hosts": res.Errors})
+	// 空清单也是合法的草稿状态；只有填了内容才解析校验。
+	if strings.TrimSpace(raw) == "" {
+		p.HostsRaw = ""
+		p.HostsFormat = format
+		p.HostsJSON = ""
+		p.HostsCount = 0
+		p.HostsSummary = []model.HostSummary{}
+	} else {
+		res := hosts.Parse(raw, format)
+		if !res.OK {
+			return p, newAPIErr(http.StatusBadRequest, "invalid_hosts", firstHostError(res)).
+				with(map[string]any{"hosts": res.Errors})
+		}
+		p.HostsRaw = raw
+		p.HostsFormat = format
+		p.HostsJSON = res.CanonicalJSON
+		p.HostsCount = res.Count
+		p.HostsSummary = res.Summary
 	}
-	p.HostsRaw = raw
-	p.HostsFormat = format
-	p.HostsJSON = res.CanonicalJSON
-	p.HostsCount = res.Count
-	p.HostsSummary = res.Summary
-	if p.OutputName == "" {
+
+	if p.OutputName == "" && iso.Filename != "" {
 		p.OutputName = defaultOutputName(iso.Filename)
 	}
 	return p, nil

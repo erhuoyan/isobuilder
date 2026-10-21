@@ -121,7 +121,9 @@ const columns: DataTableColumns<ProjectRow> = [
             h('div', { class: 'truncate text-14px' }, row.iso.name),
             h('div', { class: 'truncate font-mono text-12px text-gray-400' }, row.iso.filename)
           ])
-        : h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => '镜像已删除' })
+        : row.iso_id
+          ? h(NTag, { size: 'small', type: 'error', bordered: false }, { default: () => '镜像已删除' })
+          : h('span', { class: 'text-13px text-gray-400' }, '未选择')
   },
   {
     key: 'hosts_count',

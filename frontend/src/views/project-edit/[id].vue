@@ -18,7 +18,7 @@ const project = ref<Api.IsoBuilder.Project | null>(null);
 const isos = ref<Api.IsoBuilder.Iso[]>([]);
 const kickstarts = ref<Api.IsoBuilder.Kickstart[]>([]);
 
-const form = ref({ name: '', description: '', iso_label: '', output_name: '', payload_mode: 'off' as Api.IsoBuilder.PayloadMode });
+const form = ref({ name: '', description: '', iso_id: '', kickstart_id: '', iso_label: '', output_name: '', payload_mode: 'off' as Api.IsoBuilder.PayloadMode });
 const hostsRaw = ref('');
 const hostsFormat = ref<Api.IsoBuilder.HostsFormatInput>('auto');
 const hostsResult = ref<Api.IsoBuilder.ValidateHostsResult | null>(null);
@@ -28,16 +28,25 @@ const scripts = ref<Api.IsoBuilder.Script[]>([]);
 const selectedScriptId = ref('');
 const scriptOptions = computed(() => scripts.value.map(item => ({ label: item.name, value: item.id })));
 
-/** 基础镜像与应答模板随项目绑定存在，编辑页只展示；如需更换应新建项目 */
-const isoLabel = computed(() => {
-  const iso = isos.value.find(item => item.id === project.value?.iso_id);
-  return iso ? `${iso.name} · ${iso.filename}` : project.value?.iso_id || '—';
-});
+/**
+ * 只列与项目架构一致、且已就绪的镜像；当前已绑定的那个即使状态变了也保留，
+ * 否则用户会以为绑定丢了。
+ */
+const isoOptions = computed(() =>
+  isos.value
+    .filter(iso => iso.arch === project.value?.arch && (iso.status === 'ready' || iso.id === form.value.iso_id))
+    .map(iso => ({
+      label: `${iso.name} · ${iso.filename}${iso.status === 'ready' ? '' : `（${iso.status}）`}`,
+      value: iso.id,
+      disabled: iso.status !== 'ready'
+    }))
+);
 
-const kickstartLabel = computed(() => {
-  const kickstart = kickstarts.value.find(item => item.id === project.value?.kickstart_id);
-  return kickstart ? kickstart.name : project.value?.kickstart_id || '—';
-});
+const kickstartOptions = computed(() =>
+  kickstarts.value
+    .filter(ks => ks.arch === 'any' || ks.arch === project.value?.arch)
+    .map(ks => ({ label: `${ks.name} · ${ks.arch}`, value: ks.id }))
+);
 
 const hostHint = computed(() => {
   if (!hostsRaw.value.trim()) return '请填写主机清单。';
@@ -49,9 +58,24 @@ const hostHint = computed(() => {
   return '';
 });
 
-const canSave = computed(() => Boolean(project.value) && Boolean(form.value.name.trim()) && !hostHint.value);
+/**
+ * 草稿可保存：只要有名称就能存，镜像/模板/清单可以之后再补。
+ * 完整性由构建时把关（后端 project_incomplete 会列出缺什么）。
+ */
+const canSave = computed(() => Boolean(project.value) && Boolean(form.value.name.trim()));
 
-const saveHint = computed(() => (form.value.name.trim() ? hostHint.value : '请填写项目名称。'));
+/** 保存时的提示：能存但还不完整，告诉用户构建前还缺什么 */
+const saveHint = computed(() => {
+  if (!form.value.name.trim()) return '请填写项目名称。';
+
+  const missing: string[] = [];
+  if (!form.value.iso_id) missing.push('基础镜像');
+  if (!form.value.kickstart_id) missing.push('应答模板');
+  if (!hostsRaw.value.trim()) missing.push('主机清单');
+  else if (hostHint.value) missing.push('主机清单校验');
+
+  return missing.length ? `可以先保存草稿；构建前还需补齐：${missing.join('、')}` : '';
+});
 
 function onValidateHosts(result: Api.IsoBuilder.ValidateHostsResult | null) {
   hostsResult.value = result;
@@ -74,12 +98,15 @@ async function loadProject() {
   form.value = {
     name: data.project.name,
     description: data.project.description,
+    iso_id: data.project.iso_id,
+    kickstart_id: data.project.kickstart_id,
     iso_label: data.project.iso_label,
     output_name: data.project.output_name,
     payload_mode: data.project.payload_mode || 'off'
   };
-  hostsRaw.value = data.project.hosts_raw;
-  hostsFormat.value = data.project.hosts_format;
+  // hosts_raw 在列表里被后端省略，GET 详情时也可能因 omitempty 缺失
+  hostsRaw.value = data.project.hosts_raw ?? '';
+  hostsFormat.value = data.project.hosts_format ?? 'auto';
   postScript.value = data.project.post_script;
   selectedScriptId.value = data.project.script_id;
 }
@@ -92,6 +119,8 @@ async function handleSave() {
   const { data, error } = await fetchUpdateProject(projectId, {
     name: form.value.name.trim(),
     description: form.value.description.trim(),
+    iso_id: form.value.iso_id,
+    kickstart_id: form.value.kickstart_id,
     iso_label: form.value.iso_label.trim(),
     output_name: form.value.output_name.trim(),
     post_script: postScript.value,
@@ -145,16 +174,6 @@ onMounted(async () => {
 
     <NSpace v-else-if="project" vertical :size="16">
       <NCard :bordered="false" class="card-wrapper" size="small" title="编辑项目">
-        <NAlert type="info" :bordered="false" class="mb-16px">
-          基础镜像与应答模板随项目绑定，不可修改；如需更换请新建项目。
-        </NAlert>
-
-        <NDescriptions :column="2" size="small" bordered label-placement="left" class="mb-16px">
-          <NDescriptionsItem label="目标架构">{{ project.arch }}</NDescriptionsItem>
-          <NDescriptionsItem label="基础镜像">{{ isoLabel }}</NDescriptionsItem>
-          <NDescriptionsItem label="应答模板" :span="2">{{ kickstartLabel }}</NDescriptionsItem>
-        </NDescriptions>
-
         <NForm size="small" label-placement="top" :show-feedback="false">
           <NGrid :cols="2" :x-gap="16">
             <NFormItemGi label="项目名称">
@@ -162,6 +181,22 @@ onMounted(async () => {
             </NFormItemGi>
             <NFormItemGi label="描述">
               <NInput v-model:value="form.description" placeholder="选填，说明这批主机的用途、机房或批次" />
+            </NFormItemGi>
+            <NFormItemGi :label="`基础镜像（当前架构 ${project.arch}）`">
+              <NSelect
+                v-model:value="form.iso_id"
+                :options="isoOptions"
+                clearable
+                placeholder="选择一个状态为「可用」的镜像"
+              />
+            </NFormItemGi>
+            <NFormItemGi label="应答模板">
+              <NSelect
+                v-model:value="form.kickstart_id"
+                :options="kickstartOptions"
+                clearable
+                placeholder="选择 kickstart 模板"
+              />
             </NFormItemGi>
           </NGrid>
         </NForm>
@@ -214,11 +249,11 @@ onMounted(async () => {
       </NCard>
 
       <NCard :bordered="false" class="card-wrapper" size="small" title="主机载荷">
-        <HostsEditor v-model:value="hostsRaw" v-model:format="hostsFormat" @validate="onValidateHosts" />
+        <HostsEditor v-model:value="hostsRaw" @validate="onValidateHosts" />
       </NCard>
 
       <div class="flex items-center justify-between">
-        <span class="text-13px text-gray-400">{{ canSave ? '' : saveHint }}</span>
+        <span class="text-13px" :class="saveHint ? 'text-warning' : 'text-gray-400'">{{ saveHint }}</span>
         <NSpace :size="8">
           <NButton @click="handleCancel">取消</NButton>
           <NButton type="primary" :loading="saving" :disabled="!canSave" @click="handleSave">保存修改</NButton>
