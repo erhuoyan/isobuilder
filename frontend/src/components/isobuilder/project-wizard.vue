@@ -300,11 +300,10 @@ onMounted(async () => {
         </NSpace>
       </div>
 
-      <div class="overflow-x-auto pb-1">
-        <NSteps :current="currentStep + 1" size="small" style="min-width: 620px">
-          <NStep v-for="step in steps" :key="step.key" :title="step.title" :description="step.description" />
-        </NSteps>
-      </div>
+      <!-- 与模板 views/form/stepForm 一致：默认尺寸，圆圈 28px、标题 16px -->
+      <NSteps :current="currentStep + 1" class="mb-6">
+        <NStep v-for="step in steps" :key="step.key" :title="step.title" :description="step.description" />
+      </NSteps>
 
       <!-- 1. 基础信息 -->
       <n-form v-if="currentStep === 0" :model="form" :label-width="110" label-placement="left" size="medium" class="py-2">
