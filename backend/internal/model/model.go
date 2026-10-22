@@ -108,7 +108,9 @@ type HostSummary struct {
 	DiskGB      int    `json:"disk_gb"`
 	NetworkMode string `json:"network_mode"`
 	MACCount    int    `json:"mac_count"`
-	BMCIP       string `json:"bmc_ip"`
+	// VLANID is the 802.1Q tag the address is configured on; 0 means untagged.
+	VLANID int    `json:"vlan_id"`
+	BMCIP  string `json:"bmc_ip"`
 }
 
 // Project is a buildable configuration.

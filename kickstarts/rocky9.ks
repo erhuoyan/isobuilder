@@ -193,6 +193,13 @@ netmask = net.get('netmask', '255.255.255.0')
 gateway = net.get('gateway', '')
 dns_list = net.get('dns', [])
 bond = net.get('bond')
+# VLAN tag（可选）。填了表示静态地址配在 <父接口>.<vlan> 上，
+# 物理接口与 bond 只做二层承载，不再持有 IP。
+vlan = net.get('vlan')
+try:
+    vlan_id = int(vlan) if vlan not in (None, '', 0) else 0
+except (TypeError, ValueError):
+    vlan_id = 0
 
 KEYFILE_DIR = '/etc/NetworkManager/system-connections'
 os.makedirs(KEYFILE_DIR, exist_ok=True)
@@ -213,17 +220,25 @@ if bond:
     dns_str = ';'.join(dns_list) + ';' if dns_list else ''
 
     gw_line = f"gateway={gateway}\n" if gateway else ""
+    # 有 VLAN 时地址移到子接口，bond0 自身只承载二层
+    if vlan_id:
+        bond_ipv4 = """[ipv4]
+method=disabled
+"""
+    else:
+        bond_ipv4 = f"""[ipv4]
+address1={cidr}
+{gw_line}dns={dns_str}
+method=manual
+"""
+
     bond_cfg = f"""[connection]
 id=bond0
 uuid={uuid.uuid4()}
 type=bond
 interface-name=bond0
 
-[ipv4]
-address1={cidr}
-{gw_line}dns={dns_str}
-method=manual
-
+{bond_ipv4}
 [bond]
 mode={mode_name}
 miimon={miimon}
@@ -256,6 +271,92 @@ mac-address={mac}
         print(f"Written {path}: mac={mac}")
 
     print(f"Bond complete: mode={mode_name} slaves={raw_slaves}")
+
+    if vlan_id:
+        vlan_cfg = f"""[connection]
+id=bond0.{vlan_id}
+uuid={uuid.uuid4()}
+type=vlan
+interface-name=bond0.{vlan_id}
+
+[vlan]
+parent=bond0
+id={vlan_id}
+
+[ipv4]
+address1={cidr}
+{gw_line}dns={dns_str}
+method=manual
+"""
+        vlan_path = f'{KEYFILE_DIR}/bond0.{vlan_id}.nmconnection'
+        with open(vlan_path, 'w') as f:
+            f.write(vlan_cfg)
+        os.chmod(vlan_path, 0o600)
+        print(f"Written {vlan_path}: vlan={vlan_id} {cidr} gw={gateway}")
+
+elif vlan_id:
+    # 单口 + VLAN：按 MAC 找到物理接口，父接口不配地址，
+    # 地址落在 <nic>.<vlan> 上。
+    import glob as _glob
+    mac = (net.get('mac') or '').strip().upper().replace('-', ':')
+    nic_name = None
+    for p_ in _glob.glob('/sys/class/net/*/address'):
+        try:
+            if open(p_).read().strip().upper() == mac:
+                nic_name = p_.split('/')[4]
+                break
+        except Exception:
+            pass
+    if not nic_name:
+        # 找不到 MAC 对应的真实网卡时不要瞎猜 eth0：VLAN 的 parent
+        # 必须是真实接口，猜错会让整个网络配置失效，直接跳过。
+        print(f"WARNING: 按 MAC {mac} 找不到真实网卡，跳过 VLAN {vlan_id} 配置")
+        nic_name = ''
+
+    parent_cfg = f"""[connection]
+id={nic_name}
+uuid={uuid.uuid4()}
+type=ethernet
+interface-name={nic_name}
+
+[ethernet]
+mac-address={mac}
+
+[ipv4]
+method=disabled
+"""
+    parent_path = f'{KEYFILE_DIR}/{nic_name}.nmconnection'
+    with open(parent_path, 'w') as f:
+        f.write(parent_cfg)
+    os.chmod(parent_path, 0o600)
+
+    if not nic_name:
+        raise SystemExit(0)
+
+    cidr = f"{ip}/{netmask_to_cidr(netmask)}"
+    dns_str = ';'.join(dns_list) + ';' if dns_list else ''
+    gw_line = f"gateway={gateway}\n" if gateway else ""
+    vlan_cfg = f"""[connection]
+id={nic_name}.{vlan_id}
+uuid={uuid.uuid4()}
+type=vlan
+interface-name={nic_name}.{vlan_id}
+
+[vlan]
+parent={nic_name}
+id={vlan_id}
+
+[ipv4]
+address1={cidr}
+{gw_line}dns={dns_str}
+method=manual
+"""
+    vlan_path = f'{KEYFILE_DIR}/{nic_name}.{vlan_id}.nmconnection'
+    with open(vlan_path, 'w') as f:
+        f.write(vlan_cfg)
+    os.chmod(vlan_path, 0o600)
+    print(f"Written {parent_path} + {vlan_path}: vlan={vlan_id} {cidr} gw={gateway} mac={mac}")
+
 else:
     print("No bond config")
 PYEOF

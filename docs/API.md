@@ -93,7 +93,9 @@
       "gateway": "172.100.7.254",   // 未配置网关时为空串
       "disk_gb": 480,               // 未配置 disk_target_size 时为 0
       "network_mode": "single",     // "single" | "bond"
-      "mac_count": 1, "bmc_ip": "10.126.1.30" }
+      "mac_count": 1,
+      "vlan_id": 0,                 // 802.1Q tag；0 = 不打标
+      "bmc_ip": "10.126.1.30" }
   ],
   "created_at": "2026-09-29T07:11:02Z",
   "updated_at": "2026-09-29T07:11:02Z"
@@ -324,6 +326,8 @@ exFAT 没有 POSIX 权限位，拷进新系统后文件属主是 root、权限�
    `network.gateway` 若填写须与 `ip` 同网段。
 4. 网络模式二选一、不可同时存在也不能都缺：`network.mac`（单口）或 `network.bond`（bond，
    需 `slaves` 为偶数且 ≥2、MAC 合法、`mode` 0-6）。同时存在 → `network_mode_conflict`。
+   `network.vlan` 可选，1-4094：填了表示静态地址配在 `<父接口>.<vlan>` 子接口上
+   （bond 或无 bond 均可），父接口只做二层承载、不持有地址。
 5. 可选字段类型检查：`root_password` 字符串；`disk_target_size` 正整数；
    `partition.boot_size/efi_size` 正整数；`partition.root_fstype` ∈ {xfs, ext4, ext3, btrfs}；
    `partition.use_lvm` 布尔。

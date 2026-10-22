@@ -214,6 +214,12 @@ gateway = net.get('gateway', '')
 dns_list = net.get('dns', [])
 mac = net.get('mac', '')
 bond = net.get('bond')
+# VLAN tag（可选）：填了表示静态地址配在 <父接口>.<vlan> 上
+vlan = net.get('vlan')
+try:
+    vlan_id = int(vlan) if vlan not in (None, '', 0) else 0
+except (TypeError, ValueError):
+    vlan_id = 0
 
 IFCFG_DIR = '/etc/sysconfig/network-scripts'
 os.makedirs(IFCFG_DIR, exist_ok=True)
@@ -226,19 +232,20 @@ if bond:
     lacp_rate = bond.get('lacp_rate', 1)
     xmit_hash_policy = bond.get('xmit_hash_policy', 'layer3+4')
 
+    # 有 VLAN 时地址落在子接口，bond0 本身 BOOTPROTO=none
     bond_cfg = f"""DEVICE=bond0
 NAME=bond0
 TYPE=Bond
 BONDING_MASTER=yes
 BONDING_OPTS="mode={mode} miimon={miimon} lacp_rate={lacp_rate} xmit_hash_policy={xmit_hash_policy}"
-BOOTPROTO=static
-IPADDR={ip}
-NETMASK={netmask}
-ONBOOT=yes
+BOOTPROTO={"none" if vlan_id else "static"}
 """
-    if gateway:
+    if not vlan_id:
+        bond_cfg += f"IPADDR={ip}\nNETMASK={netmask}\n"
+    bond_cfg += "ONBOOT=yes\n"
+    if gateway and not vlan_id:
         bond_cfg += f"GATEWAY={gateway}\n"
-    if dns_list:
+    if dns_list and not vlan_id:
         for i, dns in enumerate(dns_list, 1):
             bond_cfg += f"DNS{i}={dns}\n"
 
@@ -262,6 +269,26 @@ SLAVE=yes
 
     print(f"Bond complete: mode={mode} slaves={raw_slaves}")
 
+    if vlan_id:
+        # 现场验证过的写法：DEVICE 带点号 + VLAN=yes 即被识别为 VLAN 子接口，
+        # 不需要 PHYSDEV/VLAN_ID/TYPE=Vlan。BOOTPROTO=none 表示静态地址。
+        vlan_cfg = f"""BOOTPROTO=none
+NAME=bond0.{vlan_id}
+DEVICE=bond0.{vlan_id}
+ONBOOT=yes
+VLAN=yes
+IPADDR={ip}
+NETMASK={netmask}
+"""
+        if gateway:
+            vlan_cfg += f"GATEWAY={gateway}\n"
+        if dns_list:
+            for i, dns in enumerate(dns_list, 1):
+                vlan_cfg += f"DNS{i}={dns}\n"
+        with open(f'{IFCFG_DIR}/ifcfg-bond0.{vlan_id}', 'w') as f:
+            f.write(vlan_cfg)
+        print(f"Written ifcfg-bond0.{vlan_id}: vlan={vlan_id} {ip}/{netmask} gw={gateway}")
+
 elif mac:
     # ===== Single port mode (perf: 400Gb*1) =====
     # 按 HWADDR 匹配, 同时探测物理接口名用于 NAME 和文件名
@@ -281,23 +308,46 @@ elif mac:
     if not nic_name:
         nic_name = 'mgmt'  # 极端情况: 找不到则用逻辑名
 
+    # VLAN 的 PHYSDEV 必须是真实存在的网卡名，逻辑名 mgmt 会让配置失效
+    vlan_nic_ok = nic_name != 'mgmt'
+    if vlan_id and not vlan_nic_ok:
+        print(f"WARNING: 按 MAC {mac_upper} 找不到真实网卡，跳过 VLAN {vlan_id} 配置")
+
     cfg = f"""HWADDR={mac_upper}
 NAME={nic_name}
 TYPE=Ethernet
-BOOTPROTO=static
-IPADDR={ip}
-NETMASK={netmask}
-ONBOOT=yes
+BOOTPROTO={"none" if vlan_id else "static"}
 """
-    if gateway:
+    if not vlan_id:
+        cfg += f"IPADDR={ip}\nNETMASK={netmask}\n"
+    cfg += "ONBOOT=yes\n"
+    if gateway and not vlan_id:
         cfg += f"GATEWAY={gateway}\n"
-    if dns_list:
+    if dns_list and not vlan_id:
         for i, dns in enumerate(dns_list, 1):
             cfg += f"DNS{i}={dns}\n"
 
     with open(f'{IFCFG_DIR}/ifcfg-{nic_name}', 'w') as f:
         f.write(cfg)
-    print(f"Written ifcfg-{nic_name}: {ip}/{netmask} gw={gateway} HWADDR={mac_upper}")
+    print(f"Written ifcfg-{nic_name}: BOOTPROTO={'none' if vlan_id else 'static'} HWADDR={mac_upper}")
+
+    if vlan_id and vlan_nic_ok:
+        vlan_cfg = f"""BOOTPROTO=none
+NAME={nic_name}.{vlan_id}
+DEVICE={nic_name}.{vlan_id}
+ONBOOT=yes
+VLAN=yes
+IPADDR={ip}
+NETMASK={netmask}
+"""
+        if gateway:
+            vlan_cfg += f"GATEWAY={gateway}\n"
+        if dns_list:
+            for i, dns in enumerate(dns_list, 1):
+                vlan_cfg += f"DNS{i}={dns}\n"
+        with open(f'{IFCFG_DIR}/ifcfg-{nic_name}.{vlan_id}', 'w') as f:
+            f.write(vlan_cfg)
+        print(f"Written ifcfg-{nic_name}.{vlan_id}: vlan={vlan_id} {ip}/{netmask} gw={gateway}")
 
 else:
     # Fallback: no MAC binding — 运行时探测第一个物理网卡名

@@ -224,6 +224,8 @@ declare namespace Api {
       disk_gb: number;
       network_mode: NetworkMode;
       mac_count: number;
+      /** 802.1Q VLAN tag; 0 when the address is untagged */
+      vlan_id: number;
       bmc_ip: string;
     }
 

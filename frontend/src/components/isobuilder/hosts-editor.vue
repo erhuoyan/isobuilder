@@ -20,6 +20,8 @@ interface HostRow {
   ip: string;
   netmask: string;
   gateway: string;
+  /** 802.1Q VLAN tag；留空表示不打标 */
+  vlan: string;
   /** 第 1 个网卡 MAC；单口时是唯一的网卡，bond 时是第 1 个 slave */
   mac1: string;
   /** 第 2 个网卡 MAC；只在 bond 时填，单口留空 */
@@ -49,6 +51,7 @@ const EDITABLE_FIELDS: { key: keyof Omit<HostRow, 'uid'>; title: string; width: 
   { key: 'ip', title: 'IP', width: 135, placeholder: '172.16.0.11' },
   { key: 'netmask', title: '掩码', width: 125, placeholder: '255.255.255.0' },
   { key: 'gateway', title: '网关', width: 125, placeholder: '选填' },
+  { key: 'vlan', title: 'VLAN', width: 90, placeholder: '选填，如 100' },
   { key: 'mac1', title: 'MAC', width: 150, placeholder: '必填；bond 填第 1 个' },
   { key: 'mac2', title: 'MAC2', width: 150, placeholder: '仅 bond 填第 2 个网卡' },
   { key: 'disk_target_size', title: '磁盘 GB', width: 100, placeholder: '选填' },
@@ -102,6 +105,7 @@ function emptyRow(): HostRow {
     ip: '',
     netmask: '',
     gateway: '',
+    vlan: '',
     mac1: '',
     mac2: '',
     disk_target_size: '',
@@ -155,6 +159,7 @@ function rowsToYaml(list: HostRow[]): string {
 
     lines.push('    network:');
     lines.push(`      ip: ${row.ip.trim()}`);
+    if (row.vlan.trim()) lines.push(`      vlan: ${row.vlan.trim()}`);
     if (row.netmask.trim()) lines.push(`      netmask: ${row.netmask.trim()}`);
     if (row.gateway.trim()) lines.push(`      gateway: ${row.gateway.trim()}`);
 
@@ -256,7 +261,19 @@ function readYamlHosts(text: string): Partial<HostRow>[] {
 
     if (indent === 8 && inBond) {
       if (body.startsWith('slaves:')) {
-        inSlaves = true;
+        // 兼容手写的内联数组 slaves: [mac1, mac2]
+        const inline = body.slice('slaves:'.length).trim();
+        if (inline.startsWith('[') && inline.endsWith(']')) {
+          inline
+            .slice(1, -1)
+            .split(',')
+            .map(part => unquote(part))
+            .filter(Boolean)
+            .forEach(mac => slaves.push(mac));
+          inSlaves = false;
+        } else {
+          inSlaves = true;
+        }
         return;
       }
       inSlaves = false;
@@ -350,6 +367,7 @@ async function handleFileChange(event: Event) {
             ip: String(network.ip ?? ''),
             netmask: String(network.netmask ?? ''),
             gateway: String(network.gateway ?? ''),
+            vlan: String(network.vlan ?? ''),
             mac1: String(network.mac ?? '') || (slaves[0] ?? ''),
             mac2: slaves[1] ?? '',
             disk_target_size: String(host.disk_target_size ?? ''),
@@ -404,6 +422,7 @@ async function importSpreadsheet(file: File) {
         ip: pick(row, 'ip'),
         netmask: pick(row, 'netmask'),
         gateway: pick(row, 'gateway'),
+        vlan: pick(row, 'vlan'),
         mac1: pick(row, 'mac') || pick(row, 'mac1'),
         mac2: pick(row, 'mac2'),
         disk_target_size: pick(row, 'disk_target_size'),
@@ -439,6 +458,7 @@ function exportSpreadsheet() {
     'ip',
     'netmask',
     'gateway',
+    'vlan',
     'mac1',
     'mac2',
     'disk_target_size',
@@ -456,6 +476,7 @@ function exportSpreadsheet() {
     row.ip,
     row.netmask,
     row.gateway,
+    row.vlan,
     row.mac1,
     row.mac2,
     row.disk_target_size,
@@ -740,7 +761,7 @@ watch(
       ]"
       :data="rows"
       :row-key="(row: HostRow) => row.uid"
-      :scroll-x="2100"
+      :scroll-x="2200"
       :max-height="420"
       size="medium"
       :bordered="false"

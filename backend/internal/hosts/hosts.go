@@ -320,6 +320,18 @@ func validateNetwork(h map[string]any, v *validator, s *model.HostSummary) {
 		}
 	}
 
+	// VLAN tag：可选。填了表示 IP 配在该 VLAN 子接口上，
+	// 物理接口（或 bond）只做二层承载，不再持有地址。
+	if vlanRaw, ok := n["vlan"]; ok {
+		nbits, isInt := integer(vlanRaw)
+		switch {
+		case !isInt || nbits < 1 || nbits > 4094:
+			v.add("network.vlan", "network.vlan 必须是 1-4094 的整数")
+		default:
+			s.VLANID = nbits
+		}
+	}
+
 	mac := strings.TrimSpace(text(n, "mac"))
 	bondRaw, hasBond := n["bond"]
 	switch {

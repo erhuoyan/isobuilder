@@ -28,6 +28,7 @@ const columns: DataTableColumns<Api.IsoBuilder.HostSummary> = [
   { key: 'hostname', title: 'hostname', minWidth: 130, render: row => mono(row.hostname) },
   { key: 'ip', title: 'IP', minWidth: 130, render: row => mono(row.ip) },
   { key: 'gateway', title: '网关', minWidth: 120, render: row => mono(row.gateway) },
+  { key: 'vlan_id', title: 'VLAN', width: 80, render: row => (row.vlan_id ? String(row.vlan_id) : '—') },
   {
     key: 'network_mode',
     title: '网络模式',
