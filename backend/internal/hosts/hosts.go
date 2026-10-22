@@ -322,13 +322,19 @@ func validateNetwork(h map[string]any, v *validator, s *model.HostSummary) {
 
 	// VLAN tag：可选。填了表示 IP 配在该 VLAN 子接口上，
 	// 物理接口（或 bond）只做二层承载，不再持有地址。
-	if vlanRaw, ok := n["vlan"]; ok {
-		nbits, isInt := integer(vlanRaw)
-		switch {
-		case !isInt || nbits < 1 || nbits > 4094:
-			v.add("network.vlan", "network.vlan 必须是 1-4094 的整数")
-		default:
-			s.VLANID = nbits
+	// vlan 留空（null / 空字符串）即表示不打标，不算错误：前端清空单元格、
+	// YAML 里写成 `vlan:` 都属于这种情况。数字字符串也接受，因为 CSV/Excel
+	// 与手写 YAML 都可能给出 "61" 而不是 61。
+	if vlanRaw, ok := n["vlan"]; ok && vlanRaw != nil {
+		raw := strings.TrimSpace(text(n, "vlan"))
+		if raw != "" {
+			nbits, err := strconv.Atoi(raw)
+			switch {
+			case err != nil || nbits < 1 || nbits > 4094:
+				v.add("network.vlan", "network.vlan 必须是 1-4094 的整数，留空表示不打标")
+			default:
+				s.VLANID = nbits
+			}
 		}
 	}
 
