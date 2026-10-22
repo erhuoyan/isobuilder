@@ -36,7 +36,11 @@ WORKDIR /src/backend
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/isobuilder
+ARG BUILD_VERSION=dev
+ARG BUILD_COMMIT=unknown
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X isobuilder/internal/version.Version=${BUILD_VERSION} -X isobuilder/internal/version.GitCommit=${BUILD_COMMIT} -X isobuilder/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -o /out/isobuilder ./cmd/isobuilder
 
 # ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 # ┃ 【模板段】运行时层默认可用；按需改：dnf 工具包（见下行实测路径）+ ENV ┃

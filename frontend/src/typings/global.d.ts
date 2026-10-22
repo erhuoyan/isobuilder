@@ -16,4 +16,7 @@ declare global {
 
   /** Build time of the project */
   export const BUILD_TIME: string;
+
+  /** Frontend version from package.json, injected at build time */
+  export const APP_VERSION: string;
 }

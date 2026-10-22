@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,11 +21,18 @@ import (
 	"isobuilder/internal/settings"
 	"isobuilder/internal/storage"
 	"isobuilder/internal/store"
+	"isobuilder/internal/version"
 )
 
 func main() {
 	configPath := flag.String("c", "", "YAML 配置文件路径（可设 database_url，覆盖环境变量）")
+	showVersion := flag.Bool("v", false, "显示版本信息并退出")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version.Full())
+		os.Exit(0)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)

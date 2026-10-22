@@ -74,8 +74,10 @@ fi
 # ── 2. Go 交叉编译（原生交叉，不经过 QEMU）─────────────────────────────────
 echo "▶ 交叉编译后端 linux/$ARCH"
 mkdir -p "$ROOT/backend/dist"
+VPKG="isobuilder/internal/version"
+LDFLAGS="-s -w -X ${VPKG}.Version=${VERSION} -X ${VPKG}.GitCommit=${SHORTSHA} -X ${VPKG}.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 (cd "$ROOT/backend" && CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH" \
-    go build -trimpath -ldflags="-s -w" -o dist/isobuilder ./cmd/isobuilder)
+    go build -trimpath -ldflags="$LDFLAGS" -o dist/isobuilder ./cmd/isobuilder)
 
 # ── 3. 打运行时镜像（唯一进入容器的步骤，且不含编译）───────────────────────
 echo "▶ 构建镜像"

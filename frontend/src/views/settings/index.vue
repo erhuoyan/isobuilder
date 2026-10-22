@@ -6,6 +6,9 @@ import { useConfigStore } from '@/store/modules/config';
 
 const configStore = useConfigStore();
 
+const appVersion = APP_VERSION;
+const buildTime = BUILD_TIME;
+
 const loading = ref(false);
 const saving = ref(false);
 
@@ -263,6 +266,18 @@ onMounted(() => {
         <span class="text-13px text-gray-500">保存时会自动探测对象存储连通性（即测试连接），失败不影响配置留存。</span>
       </div>
     </n-form>
+    </NCard>
+
+    <NCard :bordered="false" class="card-wrapper" size="small">
+      <h2 class="mb-3 text-18px font-500">版本信息</h2>
+      <n-descriptions label-placement="left" :column="1" bordered size="small">
+        <n-descriptions-item label="前端版本">{{ appVersion }}</n-descriptions-item>
+        <n-descriptions-item label="前端构建时间">{{ buildTime }}</n-descriptions-item>
+        <n-descriptions-item label="后端版本">{{ configStore.config?.version ?? '-' }}</n-descriptions-item>
+        <n-descriptions-item label="后端 Git Commit">{{ configStore.config?.git_commit ?? '-' }}</n-descriptions-item>
+        <n-descriptions-item label="后端构建时间">{{ configStore.config?.build_time ?? '-' }}</n-descriptions-item>
+        <n-descriptions-item label="Go 版本">{{ configStore.config?.go_version ?? '-' }}</n-descriptions-item>
+      </n-descriptions>
     </NCard>
   </div>
 </template>

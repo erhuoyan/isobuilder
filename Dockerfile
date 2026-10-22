@@ -37,8 +37,12 @@ ENV GOPROXY=${GOPROXY} GOSUMDB=off
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
 COPY backend/ ./
+ARG BUILD_VERSION=dev
+ARG BUILD_COMMIT=unknown
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags="-s -w" -o /out/isobuilder ./cmd/isobuilder
+    go build -trimpath \
+    -ldflags="-s -w -X isobuilder/internal/version.Version=${BUILD_VERSION} -X isobuilder/internal/version.GitCommit=${BUILD_COMMIT} -X isobuilder/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    -o /out/isobuilder ./cmd/isobuilder
 
 # ── Stage 3: 运行时（TARGETPLATFORM，约 120 MB）─────────────────────────────
 FROM --platform=$TARGETPLATFORM docker.io/rockylinux/rockylinux:9-minimal

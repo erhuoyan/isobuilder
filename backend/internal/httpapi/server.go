@@ -19,10 +19,8 @@ import (
 	"isobuilder/internal/model"
 	"isobuilder/internal/storage"
 	"isobuilder/internal/store"
+	"isobuilder/internal/version"
 )
-
-// Version is the reported API version.
-const Version = "0.5.0"
 
 // BuildManager is the slice of builder.Manager the HTTP layer needs.
 type BuildManager interface {
@@ -168,7 +166,7 @@ func (s *Server) withRecovery(next http.Handler) http.Handler {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":  "ok",
-		"version": Version,
+		"version": version.Version,
 		"time":    store.Now(),
 	})
 }
@@ -177,7 +175,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	free, _ := diskutil.FreeBytes(s.cfg.DataDir)
 	active, _ := s.store.CountActiveBuilds()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"version":               Version,
+		"version":               version.Version,
+		"git_commit":            version.GitCommit,
+		"build_time":            version.BuildTime,
+		"go_version":            version.GoVersion(),
 		"auth_required":         s.cfg.AuthToken != "",
 		"archs":                 []string{"x86_64", "aarch64"},
 		"max_upload_bytes":      s.cfg.MaxUploadBytes,

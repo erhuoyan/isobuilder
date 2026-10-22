@@ -67,6 +67,9 @@ declare namespace Api {
     /** `GET /api/config` */
     interface Config {
       version: string;
+      git_commit: string;
+      build_time: string;
+      go_version: string;
       /** whether the backend requires a token, `GET /api/config` is always accessible */
       auth_required: boolean;
       archs: Arch[];
