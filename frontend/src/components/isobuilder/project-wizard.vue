@@ -44,8 +44,8 @@ const form = ref({
   payload_mode: 'off' as Api.IsoBuilder.PayloadMode
 });
 const payloadModeOptions: SelectOption[] = [
-  { label: '不注入（默认）', value: 'off' },
-  { label: '按卷标查找 U 盘分区', value: 'label' },
+  { label: '不注入', value: 'off' },
+  { label: '按卷标查找', value: 'label' },
   { label: '卷标优先，未命中则扫描', value: 'auto' }
 ];
 const hostsRaw = ref('');
@@ -486,7 +486,7 @@ onMounted(async () => {
       <!-- 5. 自定义脚本 -->
       <div v-else-if="currentStep === 4" class="flex flex-col gap-3">
         <n-form :model="form" :label-width="110" label-placement="left" size="medium" class="py-2">
-          <NFormItem label="脚本库（可选，可复用）">
+          <NFormItem label="引用脚本">
             <NSelect
               v-model:value="selectedScriptId"
               :options="scriptOptions"
@@ -494,10 +494,10 @@ onMounted(async () => {
               placeholder="从脚本库选一个可复用脚本；也可只在下方写本项目专属脚本"
             />
           </NFormItem>
-          <NFormItem label="从 U 盘注入文件（可选）">
+          <NFormItem label="U 盘注入">
             <NSelect v-model:value="form.payload_mode" :options="payloadModeOptions" />
           </NFormItem>
-          <NFormItem label="本项目追加脚本（可选）">
+          <NFormItem label="追加脚本">
             <NInput
               v-model:value="postScript"
               type="textarea"

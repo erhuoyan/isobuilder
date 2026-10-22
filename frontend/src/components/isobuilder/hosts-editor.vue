@@ -27,6 +27,12 @@ interface HostRow {
   disk_target_size: string;
   root_password: string;
   bmc_ip: string;
+  /** BMC 台账信息，不参与装机，但会随清单存库（后端原样保留） */
+  bmc_mac: string;
+  bmc_netmask: string;
+  bmc_gateway: string;
+  /** 机位/机房备注 */
+  location: string;
 }
 
 /**
@@ -47,7 +53,12 @@ const EDITABLE_FIELDS: { key: keyof Omit<HostRow, 'uid'>; title: string; width: 
   { key: 'mac2', title: 'MAC2', width: 150, placeholder: '仅 bond 填第 2 个网卡' },
   { key: 'disk_target_size', title: '磁盘 GB', width: 100, placeholder: '选填' },
   { key: 'root_password', title: 'root 密码', width: 130, placeholder: '选填' },
-  { key: 'bmc_ip', title: 'BMC IP', width: 130, placeholder: '选填' }
+  { key: 'bmc_ip', title: 'BMC IP', width: 130, placeholder: '选填' },
+  // 以下 4 列是台账信息：不参与装机，但会随清单存库，导出/导入都保留
+  { key: 'bmc_mac', title: 'BMC MAC', width: 150, placeholder: '选填' },
+  { key: 'bmc_netmask', title: 'BMC 掩码', width: 130, placeholder: '选填' },
+  { key: 'bmc_gateway', title: 'BMC 网关', width: 130, placeholder: '选填' },
+  { key: 'location', title: '机位', width: 120, placeholder: '选填' }
 ];
 
 const value = defineModel<string>('value', { required: true });
@@ -95,7 +106,11 @@ function emptyRow(): HostRow {
     mac2: '',
     disk_target_size: '',
     root_password: '',
-    bmc_ip: ''
+    bmc_ip: '',
+    bmc_mac: '',
+    bmc_netmask: '',
+    bmc_gateway: '',
+    location: ''
   };
 }
 
@@ -131,7 +146,12 @@ function rowsToYaml(list: HostRow[]): string {
 
     if (row.root_password.trim()) lines.push(`    root_password: ${yamlQuote(row.root_password.trim())}`);
     if (row.disk_target_size.trim()) lines.push(`    disk_target_size: ${row.disk_target_size.trim()}`);
+    // 台账字段：不参与装机，但后端会把它们原样存进 hosts_json
     if (row.bmc_ip.trim()) lines.push(`    bmc_ip: ${row.bmc_ip.trim()}`);
+    if (row.bmc_mac.trim()) lines.push(`    bmc_mac: ${row.bmc_mac.trim()}`);
+    if (row.bmc_netmask.trim()) lines.push(`    bmc_netmask: ${row.bmc_netmask.trim()}`);
+    if (row.bmc_gateway.trim()) lines.push(`    bmc_gateway: ${row.bmc_gateway.trim()}`);
+    if (row.location.trim()) lines.push(`    location: ${yamlQuote(row.location.trim())}`);
 
     lines.push('    network:');
     lines.push(`      ip: ${row.ip.trim()}`);
@@ -334,7 +354,11 @@ async function handleFileChange(event: Event) {
             mac2: slaves[1] ?? '',
             disk_target_size: String(host.disk_target_size ?? ''),
             root_password: String(host.root_password ?? ''),
-            bmc_ip: String(host.bmc_ip ?? '')
+            bmc_ip: String(host.bmc_ip ?? ''),
+            bmc_mac: String(host.bmc_mac ?? ''),
+            bmc_netmask: String(host.bmc_netmask ?? ''),
+            bmc_gateway: String(host.bmc_gateway ?? ''),
+            location: String(host.location ?? '')
           };
         })
       );
@@ -384,7 +408,11 @@ async function importSpreadsheet(file: File) {
         mac2: pick(row, 'mac2'),
         disk_target_size: pick(row, 'disk_target_size'),
         root_password: pick(row, 'root_password'),
-        bmc_ip: pick(row, 'bmc_ip')
+        bmc_ip: pick(row, 'bmc_ip'),
+        bmc_mac: pick(row, 'bmc_mac'),
+        bmc_netmask: pick(row, 'bmc_netmask'),
+        bmc_gateway: pick(row, 'bmc_gateway'),
+        location: pick(row, 'location')
       }))
       .filter(row => row.sn || row.hostname);
 
@@ -415,7 +443,11 @@ function exportSpreadsheet() {
     'mac2',
     'disk_target_size',
     'root_password',
-    'bmc_ip'
+    'bmc_ip',
+    'bmc_mac',
+    'bmc_netmask',
+    'bmc_gateway',
+    'location'
   ];
 
   const data = filled.map(row => [
@@ -428,7 +460,11 @@ function exportSpreadsheet() {
     row.mac2,
     row.disk_target_size,
     row.root_password,
-    row.bmc_ip
+    row.bmc_ip,
+    row.bmc_mac,
+    row.bmc_netmask,
+    row.bmc_gateway,
+    row.location
   ]);
 
   const sheet = XLSX.utils.aoa_to_sheet([header, ...data]);
@@ -704,7 +740,7 @@ watch(
       ]"
       :data="rows"
       :row-key="(row: HostRow) => row.uid"
-      :scroll-x="1700"
+      :scroll-x="2100"
       :max-height="420"
       size="medium"
       :bordered="false"
