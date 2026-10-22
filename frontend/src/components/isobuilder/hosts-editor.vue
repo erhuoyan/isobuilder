@@ -20,27 +20,33 @@ interface HostRow {
   ip: string;
   netmask: string;
   gateway: string;
-  mac: string;
-  /** bond 模式用两个 MAC；为空表示单口 */
+  /** 第 1 个网卡 MAC；单口时是唯一的网卡，bond 时是第 1 个 slave */
   mac1: string;
+  /** 第 2 个网卡 MAC；只在 bond 时填，单口留空 */
   mac2: string;
   disk_target_size: string;
   root_password: string;
   bmc_ip: string;
 }
 
-/** 可编辑的列，顺序即表格列顺序 */
+/**
+ * 可编辑的列，顺序即表格列顺序。
+ *
+ * MAC 列的语义由填写数量决定（与 kickstart 一致）：
+ *   - 填 1 个 = 单口（network.mac）
+ *   - 填 2 个 = bond（network.bond.slaves，mode 4）
+ * 不需要用户自己区分模式。
+ */
 const EDITABLE_FIELDS: { key: keyof Omit<HostRow, 'uid'>; title: string; width: number; placeholder: string }[] = [
-  { key: 'sn', title: 'SN', width: 150, placeholder: '必填，装机时按它匹配' },
+  { key: 'sn', title: 'SN', width: 150, placeholder: '必填，装机按 SN 匹配主机' },
   { key: 'hostname', title: '主机名', width: 130, placeholder: 'node-01' },
   { key: 'ip', title: 'IP', width: 135, placeholder: '172.16.0.11' },
   { key: 'netmask', title: '掩码', width: 125, placeholder: '255.255.255.0' },
-  { key: 'gateway', title: '网关', width: 135, placeholder: '选填' },
-  { key: 'mac', title: 'MAC（单口）', width: 150, placeholder: '单口填这里' },
-  { key: 'mac1', title: 'MAC1（bond）', width: 150, placeholder: 'bond 用' },
-  { key: 'mac2', title: 'MAC2（bond）', width: 150, placeholder: 'bond 用' },
-  { key: 'disk_target_size', title: '目标磁盘 GB', width: 110, placeholder: '选填' },
-  { key: 'root_password', title: 'root 密码', width: 140, placeholder: '选填' },
+  { key: 'gateway', title: '网关', width: 125, placeholder: '选填' },
+  { key: 'mac1', title: 'MAC', width: 150, placeholder: '必填；bond 填第 1 个' },
+  { key: 'mac2', title: 'MAC2', width: 150, placeholder: '仅 bond 填第 2 个网卡' },
+  { key: 'disk_target_size', title: '磁盘 GB', width: 100, placeholder: '选填' },
+  { key: 'root_password', title: 'root 密码', width: 130, placeholder: '选填' },
   { key: 'bmc_ip', title: 'BMC IP', width: 130, placeholder: '选填' }
 ];
 
@@ -85,7 +91,6 @@ function emptyRow(): HostRow {
     ip: '',
     netmask: '',
     gateway: '',
-    mac: '',
     mac1: '',
     mac2: '',
     disk_target_size: '',
@@ -133,15 +138,23 @@ function rowsToYaml(list: HostRow[]): string {
     if (row.netmask.trim()) lines.push(`      netmask: ${row.netmask.trim()}`);
     if (row.gateway.trim()) lines.push(`      gateway: ${row.gateway.trim()}`);
 
-    const useBond = Boolean(row.mac1.trim() && row.mac2.trim());
-    if (useBond) {
+    const mac1 = row.mac1.trim();
+    const mac2 = row.mac2.trim();
+
+    // 与 kickstart/Excel 模板一致：mac1+mac2 都填 = bond（2 个 slave），
+    // 只填 mac1 = 单口。判据是数据本身，用户不需要选模式。
+    const isBond = Boolean(mac1 && mac2);
+    if (!mac1 && !mac2) {
+      // 没有任何 MAC：后端会报「缺少网络绑定方式」，让错误标到这行
+      lines.push('      mac: ');
+    } else if (isBond) {
       lines.push('      bond:');
       lines.push('        mode: 4');
       lines.push('        slaves:');
-      lines.push(`          - ${row.mac1.trim()}`);
-      lines.push(`          - ${row.mac2.trim()}`);
+      lines.push(`          - ${mac1}`);
+      lines.push(`          - ${mac2}`);
     } else {
-      lines.push(`      mac: ${row.mac.trim()}`);
+      lines.push(`      mac: ${mac1 || mac2}`);
     }
   });
 
@@ -317,8 +330,7 @@ async function handleFileChange(event: Event) {
             ip: String(network.ip ?? ''),
             netmask: String(network.netmask ?? ''),
             gateway: String(network.gateway ?? ''),
-            mac: String(network.mac ?? ''),
-            mac1: slaves[0] ?? '',
+            mac1: String(network.mac ?? '') || (slaves[0] ?? ''),
             mac2: slaves[1] ?? '',
             disk_target_size: String(host.disk_target_size ?? ''),
             root_password: String(host.root_password ?? ''),
@@ -368,8 +380,7 @@ async function importSpreadsheet(file: File) {
         ip: pick(row, 'ip'),
         netmask: pick(row, 'netmask'),
         gateway: pick(row, 'gateway'),
-        mac: pick(row, 'mac'),
-        mac1: pick(row, 'mac1'),
+        mac1: pick(row, 'mac') || pick(row, 'mac1'),
         mac2: pick(row, 'mac2'),
         disk_target_size: pick(row, 'disk_target_size'),
         root_password: pick(row, 'root_password'),
@@ -384,20 +395,20 @@ async function importSpreadsheet(file: File) {
   }
 }
 
-/** 导出：电子表格（便于 Excel 编辑后再导回） */
+/**
+ * 导出当前表格为 xlsx。
+ *
+ * 空表格导出的就是模板本身（只有表头行），用户下载后按列名填，
+ * 再用「导入」读回来 —— 所以导出在空状态下也可用。
+ */
 function exportSpreadsheet() {
-  if (!hasContent.value) {
-    window.$message?.warning('还没有主机');
-    return;
-  }
-
-  const data = rows.value.filter(isFilled).map(row => ({
+  const filled = rows.value.filter(isFilled);
+  const data = filled.map(row => ({
     sn: row.sn,
     hostname: row.hostname,
     ip: row.ip,
     netmask: row.netmask,
     gateway: row.gateway,
-    mac: row.mac,
     mac1: row.mac1,
     mac2: row.mac2,
     disk_target_size: row.disk_target_size,
@@ -409,6 +420,35 @@ function exportSpreadsheet() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, '主机清单');
   XLSX.writeFile(workbook, 'isobuilder-主机清单.xlsx');
+  window.$message?.success(
+    filled.length ? `已导出 ${filled.length} 台主机` : '已导出空白模板，按列名填写后可用「导入」读回'
+  );
+}
+
+const exportOptions = [
+  { key: 'xlsx', label: 'Excel 表格（可再导回）' },
+  { key: 'yaml', label: 'YAML 清单' }
+];
+
+function onExportSelect(key: string | number) {
+  if (String(key) === 'yaml') exportYaml();
+  else exportSpreadsheet();
+}
+
+/** 导出 YAML 文本清单 */
+function exportYaml() {
+  if (!hasContent.value) {
+    window.$message?.warning('还没有主机');
+    return;
+  }
+
+  const blob = new Blob([rowsToYaml(rows.value)], { type: 'text/yaml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'hosts.yaml';
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 /* ─── 校验 ───────────────────────────────────────────────────────── */
@@ -512,7 +552,7 @@ watch(
   <div class="flex flex-col gap-12px">
     <div class="flex flex-wrap items-center justify-between gap-8px">
       <span class="text-13px text-gray-500">
-        每行一台主机，可直接编辑；MAC1/MAC2 都填则按 bond 装机
+        每行一台主机；填 MAC 即单口，再填 MAC2 则为 bond
       </span>
 
       <NSpace :size="8">
@@ -534,12 +574,14 @@ watch(
           </template>
           导入
         </NButton>
-        <NButton size="small" :disabled="!hasContent" @click="exportSpreadsheet">
-          <template #icon>
-            <SvgIcon icon="mdi:microsoft-excel" />
-          </template>
-          导出
-        </NButton>
+        <NDropdown trigger="click" :options="exportOptions" @select="onExportSelect">
+          <NButton size="small" :disabled="false">
+            <template #icon>
+              <SvgIcon icon="mdi:file-download-outline" />
+            </template>
+            导出
+          </NButton>
+        </NDropdown>
         <NButton size="small" :disabled="!hasContent" @click="clearAll">
           <template #icon>
             <SvgIcon icon="mdi:eraser" />
