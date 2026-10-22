@@ -233,16 +233,17 @@ if bond:
     xmit_hash_policy = bond.get('xmit_hash_policy', 'layer3+4')
 
     # 有 VLAN 时地址落在子接口，bond0 本身 BOOTPROTO=none
+    # 与现场实际生成的 ifcfg-bond0 一致：TYPE=Bond 已足以标识 master，
+    # 不写 BONDING_MASTER（实测不需要，多写反而与已验证配置不一致）。
     bond_cfg = f"""DEVICE=bond0
 NAME=bond0
 TYPE=Bond
-BONDING_MASTER=yes
-BONDING_OPTS="mode={mode} miimon={miimon} lacp_rate={lacp_rate} xmit_hash_policy={xmit_hash_policy}"
 BOOTPROTO={"none" if vlan_id else "static"}
+ONBOOT=yes
+BONDING_OPTS="mode={mode} miimon={miimon} lacp_rate={lacp_rate} xmit_hash_policy={xmit_hash_policy}"
 """
     if not vlan_id:
         bond_cfg += f"IPADDR={ip}\nNETMASK={netmask}\n"
-    bond_cfg += "ONBOOT=yes\n"
     if gateway and not vlan_id:
         bond_cfg += f"GATEWAY={gateway}\n"
     if dns_list and not vlan_id:
