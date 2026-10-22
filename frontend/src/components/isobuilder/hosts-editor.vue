@@ -403,20 +403,38 @@ async function importSpreadsheet(file: File) {
  */
 function exportSpreadsheet() {
   const filled = rows.value.filter(isFilled);
-  const data = filled.map(row => ({
-    sn: row.sn,
-    hostname: row.hostname,
-    ip: row.ip,
-    netmask: row.netmask,
-    gateway: row.gateway,
-    mac1: row.mac1,
-    mac2: row.mac2,
-    disk_target_size: row.disk_target_size,
-    root_password: row.root_password,
-    bmc_ip: row.bmc_ip
-  }));
 
-  const sheet = XLSX.utils.json_to_sheet(data);
+  // 列顺序即导入协议的列顺序；空表也要有表头行，否则导出的不是模板
+  const header = [
+    'sn',
+    'hostname',
+    'ip',
+    'netmask',
+    'gateway',
+    'mac1',
+    'mac2',
+    'disk_target_size',
+    'root_password',
+    'bmc_ip'
+  ];
+
+  const data = filled.map(row => [
+    row.sn,
+    row.hostname,
+    row.ip,
+    row.netmask,
+    row.gateway,
+    row.mac1,
+    row.mac2,
+    row.disk_target_size,
+    row.root_password,
+    row.bmc_ip
+  ]);
+
+  const sheet = XLSX.utils.aoa_to_sheet([header, ...data]);
+  // 表头列宽按内容给足，避免打开是挤压的一列
+  sheet['!cols'] = header.map(name => ({ wch: Math.max(12, name.length + 4) }));
+
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, '主机清单');
   XLSX.writeFile(workbook, 'isobuilder-主机清单.xlsx');
@@ -533,7 +551,17 @@ const debouncedValidate = useDebounceFn(runValidate, VALIDATE_DEBOUNCE);
 watch(
   rows,
   () => {
-    value.value = rowsToYaml(rows.value);
+    const yaml = rowsToYaml(rows.value);
+
+    /**
+     * 组件挂载瞬间表格还是空的，但父组件可能已经传进来一份已保存的清单
+     * （编辑页异步加载完成后才挂载本组件）。
+     * 此时若把空表格回写，会把父组件的值覆盖成空串，
+     * 下面的 value watch 就再也解析不到内容了 —— 表现为「编辑页主机载荷丢失」。
+     */
+    if (!yaml && value.value.trim()) return;
+
+    value.value = yaml;
 
     if (!hasContent.value) {
       result.value = null;
@@ -545,6 +573,33 @@ watch(
     debouncedValidate();
   },
   { deep: true, immediate: true }
+);
+
+/**
+ * 父组件（编辑页）加载已保存项目后会把 YAML 塞进 value；
+ * 此时表格还是空的，需要解析回表格行——否则用户一打开编辑页
+ * 就会把已保存的主机清单覆盖成空。
+ *
+ * 只解析本组件自己生成的结构（hosts/network/bond），其余字段忽略。
+ */
+watch(
+  value,
+  next => {
+    const text = next ?? '';
+
+    // 表格行生成的 YAML 与 value 一致，属于正常回流，不反向解析
+    if (text === rowsToYaml(rows.value)) return;
+
+    const parsed = text.trim() ? readYamlHosts(text) : [];
+    if (parsed.length) {
+      appendParsed(parsed);
+    } else if (!text.trim()) {
+      // 父组件真正清空（比如新建后重置）
+      rows.value = [emptyRow()];
+    }
+    // text 有内容但解析不出行：保持表格现状，等用户用文本模式
+  },
+  { immediate: true }
 );
 </script>
 
