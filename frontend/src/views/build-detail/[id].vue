@@ -126,14 +126,14 @@ onMounted(() => {
 
     <NSpace v-else-if="build" vertical :size="16">
       <NCard :bordered="false" class="card-wrapper" size="small">
-        <div class="flex flex-wrap items-start justify-between gap-12px">
+        <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-8px">
+            <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-18px font-500">构建详情</h2>
               <BuildStatusTag :status="build.status" />
               <NTag size="small" :bordered="false">{{ build.arch }}</NTag>
             </div>
-            <div class="mt-8px flex flex-wrap items-center gap-x-16px gap-y-4px text-13px text-gray-500">
+            <div class="mt-2 flex flex-wrap items-center gap-x-16px gap-y-4px text-13px text-gray-500">
               <span>
                 项目：
                 <NButton
@@ -182,7 +182,7 @@ onMounted(() => {
           </NSpace>
         </div>
 
-        <div class="mt-20px">
+        <div class="mt-5">
           <StageTrack
             :stage="build.stage"
             :stage-index="build.stage_index"
@@ -190,7 +190,7 @@ onMounted(() => {
             :progress="build.progress"
             :status="build.status"
           />
-          <p class="mt-8px text-13px text-gray-500">
+          <p class="mt-2 text-13px text-gray-500">
             <template v-if="currentStage">
               第 <span class="font-mono">{{ build.stage_index }}/{{ build.stage_total }}</span> 段 ·
               <span class="font-500">{{ currentStage.label }}</span> · {{ currentStage.description }}
@@ -227,7 +227,7 @@ onMounted(() => {
             <span class="font-mono">{{ formatBytes(build.log_bytes) }}</span>
           </NDescriptionsItem>
         </NDescriptions>
-        <div class="mt-12px">
+        <div class="mt-3">
           <CopyText label="构建 ID" :text="build.id" />
         </div>
       </NCard>

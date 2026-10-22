@@ -132,7 +132,7 @@ const columns: DataTableColumns<Api.IsoBuilder.Script> = [
     title: '名称',
     minWidth: 220,
     render: row =>
-      h('div', { class: 'min-w-0 py-4px' }, [
+      h('div', { class: 'min-w-0 py-1' }, [
         h('span', { class: 'truncate text-15px font-500', title: row.name }, row.name)
       ])
   },
@@ -196,12 +196,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="flex-col-stretch gap-4">
     <NCard :bordered="false" class="card-wrapper" size="medium">
-      <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-18px font-500">自定义脚本</h2>
-          <p class="mt-4px text-13px text-gray-500">
+          <p class="mt-1 text-13px text-gray-500">
             可复用的安装后脚本库。项目里选中后在系统安装完成后执行；脚本库在前、项目内的追加脚本在后。
           </p>
         </div>
@@ -232,7 +232,7 @@ onMounted(() => {
         :single-line="false"
       >
         <template #empty>
-          <div class="py-40px">
+          <div class="py-10">
             <NEmpty description="脚本库还没有内容，点击「新建脚本」添加一个可复用的自定义脚本" />
           </div>
         </template>
@@ -245,7 +245,7 @@ onMounted(() => {
           <NButton type="primary" @click="copyPreview">复制内容</NButton>
         </template>
         <pre
-          class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900"
+          class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-3 font-mono text-12px dark:bg-gray-900"
         >{{ previewContent || '脚本内容为空' }}</pre>
       </NDrawerContent>
     </NDrawer>
@@ -273,7 +273,7 @@ onMounted(() => {
             />
           </NFormItem>
           <NAlert type="info" :bordered="false" :show-icon="true">
-            <div class="flex flex-col gap-4px text-13px">
+            <div class="flex flex-col gap-1 text-13px">
               <span>脚本以 base64 注入 kickstart 的独立 <span class="font-mono">%post</span> 段，无需转义特殊字符。</span>
               <span>建议以 <span class="font-mono">#!/bin/bash</span> 开头；上限 64 KiB。</span>
               <span>执行记录与退出码落在装机机的 <span class="font-mono">/var/log/isobuilder/</span>。</span>

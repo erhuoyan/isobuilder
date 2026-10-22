@@ -283,11 +283,11 @@ onMounted(async () => {
 
 <template>
   <NSpin :show="spinLoading">
-    <div class="flex flex-col gap-16px">
-      <div class="flex flex-wrap items-center justify-between gap-12px">
+    <div class="flex flex-col gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div class="text-16px font-500">第 {{ currentStep + 1 }} / {{ steps.length }} 步 · {{ currentStepInfo.title }}</div>
-          <div class="mt-4px text-13px text-gray-500">{{ currentStepInfo.description }}</div>
+          <div class="mt-1 text-13px text-gray-500">{{ currentStepInfo.description }}</div>
         </div>
         <NSpace :size="8">
           <NButton :loading="saving" :disabled="!canSaveDraft" @click="handleSave(true)">
@@ -300,14 +300,14 @@ onMounted(async () => {
         </NSpace>
       </div>
 
-      <div class="overflow-x-auto pb-4px">
+      <div class="overflow-x-auto pb-1">
         <NSteps :current="currentStep + 1" size="small" style="min-width: 620px">
           <NStep v-for="step in steps" :key="step.key" :title="step.title" :description="step.description" />
         </NSteps>
       </div>
 
       <!-- 1. 基础信息 -->
-      <NForm v-if="currentStep === 0" label-placement="top">
+      <n-form v-if="currentStep === 0" :model="form" :label-width="110" label-placement="left" size="medium" class="py-2">
         <NFormItem label="项目名称" required>
           <NInput v-model:value="form.name" placeholder="例如：京西机房 perf 批次" maxlength="100" show-count />
         </NFormItem>
@@ -327,11 +327,11 @@ onMounted(async () => {
             </NRadioButton>
           </NRadioGroup>
         </NFormItem>
-      </NForm>
+      </n-form>
 
       <!-- 2. 基础镜像 -->
-      <div v-else-if="currentStep === 1" class="flex flex-col gap-12px">
-        <div class="flex flex-wrap items-center justify-between gap-8px">
+      <div v-else-if="currentStep === 1" class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <span class="text-14px text-gray-500">
             仅状态为「可用」的镜像可以被选用，其它状态会置灰并说明原因。
           </span>
@@ -342,9 +342,9 @@ onMounted(async () => {
           当前项目绑定的基础镜像已从镜像库删除，请重新选择一个镜像。
         </NAlert>
 
-        <div v-if="loadingIsos" class="py-24px text-center">
+        <div v-if="loadingIsos" class="py-6 text-center">
           <NSpin size="small" />
-          <div class="mt-8px text-13px text-gray-500">正在加载镜像库…</div>
+          <div class="mt-2 text-13px text-gray-500">正在加载镜像库…</div>
         </div>
 
         <NEmpty v-else-if="!isos.length" description="镜像库中还没有基础镜像，请先上传或登记一个 ISO。">
@@ -362,7 +362,7 @@ onMounted(async () => {
           </template>
         </NEmpty>
 
-        <div v-else class="grid grid-cols-1 gap-12px md:grid-cols-2 xl:grid-cols-3">
+        <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <div
             v-for="iso in visibleIsos"
             :key="iso.id"
@@ -376,14 +376,14 @@ onMounted(async () => {
             :aria-disabled="!canSelectIso(iso)"
             @click="selectIso(iso)"
           >
-            <div class="flex items-start justify-between gap-8px">
+            <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="truncate text-14px font-500">{{ iso.name }}</div>
                 <div class="truncate text-12px font-mono text-gray-500">{{ iso.filename }}</div>
               </div>
               <IsoStatusTag :status="iso.status" :animated="false" />
             </div>
-            <div class="flex flex-wrap items-center gap-8px text-12px text-gray-500">
+            <div class="flex flex-wrap items-center gap-2 text-12px text-gray-500">
               <span class="font-mono">{{ iso.arch }}</span>
               <span class="font-mono">{{ formatBytes(iso.size_bytes) }}</span>
               <span>{{ isoSourceRecord[iso.source].label }}</span>
@@ -397,14 +397,14 @@ onMounted(async () => {
       </div>
 
       <!-- 3. kickstart 模板 -->
-      <div v-else-if="currentStep === 2" class="flex flex-col gap-12px">
+      <div v-else-if="currentStep === 2" class="flex flex-col gap-3">
         <span class="text-14px text-gray-500">
           装机时 kickstart 会被写入 ISO，其中的占位符由构建阶段替换为主机清单。
         </span>
 
-        <div v-if="loadingKickstarts" class="py-24px text-center">
+        <div v-if="loadingKickstarts" class="py-6 text-center">
           <NSpin size="small" />
-          <div class="mt-8px text-13px text-gray-500">正在加载模板库…</div>
+          <div class="mt-2 text-13px text-gray-500">正在加载模板库…</div>
         </div>
 
         <NEmpty v-else-if="!kickstarts.length" description="模板库中还没有 kickstart 模板。">
@@ -413,7 +413,7 @@ onMounted(async () => {
           </template>
         </NEmpty>
 
-        <div v-else class="grid grid-cols-1 gap-12px md:grid-cols-2">
+        <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div
             v-for="kickstart in kickstarts"
             :key="kickstart.id"
@@ -427,10 +427,10 @@ onMounted(async () => {
             :aria-disabled="!canSelectKickstart(kickstart)"
             @click="selectKickstart(kickstart)"
           >
-            <div class="flex items-start justify-between gap-8px">
+            <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
                 <div class="truncate text-14px font-500">{{ kickstart.name }}</div>
-                <div class="mt-4px flex flex-wrap items-center gap-6px text-12px text-gray-500">
+                <div class="mt-1 flex flex-wrap items-center gap-1.5 text-12px text-gray-500">
                   <NTag size="tiny" :bordered="false" class="font-mono">{{ kickstart.arch }}</NTag>
                   <NTag v-if="kickstart.builtin" size="tiny" type="info" :bordered="false">内置</NTag>
                   <span class="font-mono">{{ formatBytes(kickstart.size_bytes) }}</span>
@@ -450,7 +450,7 @@ onMounted(async () => {
               所有可用模板都有，展示它没有区分度。真正要看的是模板里有没有
               %%PAYLOAD_SNIPPET%% —— 有替换点，项目的 payload_mode 才会生效。
             -->
-            <div class="flex flex-wrap items-center gap-6px">
+            <div class="flex flex-wrap items-center gap-1.5">
               <NTag
                 v-if="kickstart.placeholders.includes(PAYLOAD_PLACEHOLDER)"
                 size="tiny"
@@ -479,13 +479,13 @@ onMounted(async () => {
       </div>
 
       <!-- 4. 主机清单 -->
-      <div v-else-if="currentStep === 3" class="flex flex-col gap-12px">
+      <div v-else-if="currentStep === 3" class="flex flex-col gap-3">
         <HostsEditor v-model:value="hostsRaw" @validate="onValidateHosts" />
       </div>
 
       <!-- 5. 自定义脚本 -->
-      <div v-else-if="currentStep === 4" class="flex flex-col gap-12px">
-        <NForm label-placement="top" :show-feedback="false">
+      <div v-else-if="currentStep === 4" class="flex flex-col gap-3">
+        <n-form :model="form" :label-width="110" label-placement="left" size="medium" class="py-2">
           <NFormItem label="脚本库（可选，可复用）">
             <NSelect
               v-model:value="selectedScriptId"
@@ -506,9 +506,9 @@ onMounted(async () => {
               class="font-mono"
             />
           </NFormItem>
-        </NForm>
+        </n-form>
         <NAlert type="info" :bordered="false" :show-icon="true">
-          <div class="flex flex-col gap-4px text-13px">
+          <div class="flex flex-col gap-1 text-13px">
             <span>脚本在系统安装完成后的 kickstart <span class="font-mono">%post</span> 阶段执行，位于网络配置之后。</span>
             <span>执行顺序：<span class="font-500">先跑脚本库里选中的脚本，再跑本项目的追加脚本</span>。</span>
             <span>内容以 base64 注入，无需转义特殊字符；执行记录在 <span class="font-mono">/var/log/isobuilder/</span>。</span>
@@ -517,7 +517,7 @@ onMounted(async () => {
       </div>
 
       <!-- 6. 高级项 -->
-      <NForm v-else label-placement="top">
+      <n-form v-else :model="form" :label-width="110" label-placement="left" size="medium" class="py-2">
         <NFormItem label="ISO 卷标（iso_label）">
           <NInput v-model:value="form.iso_label" placeholder="留空则构建时自动探测原版 ISO 的卷标" />
         </NFormItem>
@@ -525,7 +525,7 @@ onMounted(async () => {
           <NInput v-model:value="form.output_name" placeholder="留空则构建时自动生成，例如 xxx-auto.iso" />
         </NFormItem>
         <NAlert type="info" :bordered="false" :show-icon="true">
-          <div class="flex flex-col gap-4px text-13px">
+          <div class="flex flex-col gap-1 text-13px">
             <span>
               <span class="font-mono">iso_label</span>
               留空时，构建阶段会挂载原版 ISO 并自动探测其卷标（volume label）后使用。
@@ -537,13 +537,13 @@ onMounted(async () => {
             </span>
           </div>
         </NAlert>
-      </NForm>
+      </n-form>
 
       <NAlert v-if="stepHint" type="warning" size="small" :bordered="false" :show-icon="true">
         {{ stepHint }}
       </NAlert>
 
-      <div class="flex flex-wrap items-center justify-between gap-12px">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <NButton :disabled="currentStep === 0" @click="handlePrev">
           <template #icon>
             <SvgIcon icon="mdi:chevron-left" />

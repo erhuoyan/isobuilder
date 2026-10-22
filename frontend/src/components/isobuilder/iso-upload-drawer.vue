@@ -114,7 +114,7 @@ function goSettings() {
     @update:show="handleUpdateShow"
   >
     <NDrawerContent title="添加基础镜像" :native-scrollbar="false" closable>
-      <div class="mb-16px">
+      <div class="mb-4">
         <NRadioGroup v-model:value="activeTab" size="small" :disabled="submitting">
           <NRadioButton value="url">链接导入</NRadioButton>
           <NRadioButton value="path">本地注册</NRadioButton>
@@ -158,11 +158,11 @@ function goSettings() {
         </template>
       </NAlert>
 
-      <NAlert v-if="errorMessage" class="mt-16px" type="error" :bordered="false" :show-icon="true" title="提交失败">
+      <NAlert v-if="errorMessage" class="mt-4" type="error" :bordered="false" :show-icon="true" title="提交失败">
         <div class="break-all">{{ errorMessage }}</div>
         <NButton
           v-if="errorCode === 'storage_not_configured'"
-          class="mt-8px"
+          class="mt-2"
           size="tiny"
           secondary
           type="primary"

@@ -65,7 +65,7 @@ const indicatorStatus = computed(() => (props.status === 'failed' ? 'error' : pr
     </div>
   </div>
 
-  <div class="mt-16px flex items-center gap-12px">
+  <div class="mt-4 flex items-center gap-3">
     <NProgress
       class="min-w-0 flex-1"
       type="line"

@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
 <template>
   <NCard :bordered="false" class="card-wrapper" size="small">
     <template #header>
-      <div class="flex flex-wrap items-center gap-8px">
+      <div class="flex flex-wrap items-center gap-2">
         <span class="text-15px font-500">构建日志</span>
         <span class="log-state" :class="state.class">
           <SvgIcon :icon="state.icon" :class="{ 'animate-spin': streamState === 'connecting' }" />
@@ -193,15 +193,15 @@ onBeforeUnmount(() => {
       </NSpace>
     </template>
 
-    <NAlert v-if="errorMsg" class="mb-12px" type="warning" :bordered="false">
+    <NAlert v-if="errorMsg" class="mb-3" type="warning" :bordered="false">
       {{ errorMsg }}
-      <span v-if="streamState === 'error' && retryCount < MAX_RETRY" class="ml-4px">（正在自动重连…）</span>
+      <span v-if="streamState === 'error' && retryCount < MAX_RETRY" class="ml-1">（正在自动重连…）</span>
     </NAlert>
 
     <div class="relative min-w-0">
       <div
         ref="logBox"
-        class="log-box h-[50vh] min-h-240px w-full overflow-auto rounded-6px bg-gray-900 px-12px py-8px"
+        class="log-box h-[50vh] min-h-240px w-full overflow-auto rounded-6px bg-gray-900 px-3 py-2"
         role="log"
         aria-live="polite"
         aria-atomic="false"

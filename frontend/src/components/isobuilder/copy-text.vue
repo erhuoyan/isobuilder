@@ -32,10 +32,10 @@ async function handleCopy() {
 </script>
 
 <template>
-  <div class="min-w-0 flex items-center gap-8px">
+  <div class="min-w-0 flex items-center gap-2">
     <span v-if="label" class="shrink-0 text-14px text-gray-500">{{ label }}</span>
     <code
-      class="min-w-0 flex-1 border border-gray-200 rounded-4px bg-gray-50 px-8px py-2px text-13px font-mono dark:border-gray-700 dark:bg-gray-900"
+      class="min-w-0 flex-1 border border-gray-200 rounded-4px bg-gray-50 px-2 py-0.5 text-13px font-mono dark:border-gray-700 dark:bg-gray-900"
       :class="wrap ? 'break-all whitespace-pre-wrap' : 'overflow-x-auto whitespace-nowrap'"
     >
       {{ text || '—' }}

@@ -105,7 +105,7 @@ const columns: DataTableColumns<ProjectRow> = [
     title: '项目',
     minWidth: 220,
     render: row =>
-      h('div', { class: 'py-4px' }, [
+      h('div', { class: 'py-1' }, [
         h('div', { class: 'text-15px font-500' }, row.name),
         h('div', { class: 'text-12px text-gray-400' }, row.description || '—')
       ])
@@ -182,12 +182,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="flex-col-stretch gap-4">
     <NCard :bordered="false" class="card-wrapper" size="medium">
-    <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="text-18px font-500">装机项目</h2>
-        <p class="mt-4px text-13px text-gray-500">
+        <p class="mt-1 text-13px text-gray-500">
           每个项目对应一次 ISO 定制：绑定基础镜像与 kickstart 应答文件，并携带一份主机清单。
         </p>
       </div>
@@ -207,7 +207,7 @@ onMounted(() => {
       </NSpace>
     </div>
 
-    <NAlert v-if="hasActiveBuild" class="mb-12px" type="info" :bordered="false">
+    <NAlert v-if="hasActiveBuild" class="mb-3" type="info" :bordered="false">
       有 {{ activeProjectIds.length }} 个项目正在构建，列表每 3 秒自动刷新。
     </NAlert>
 
@@ -222,7 +222,7 @@ onMounted(() => {
       :single-line="false"
     >
       <template #empty>
-        <div class="py-40px">
+        <div class="py-10">
           <NEmpty description="还没有项目，先创建一个吧">
             <template #extra>
               <NButton type="primary" @click="routerPushByKey('project-create')">新建项目</NButton>

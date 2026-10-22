@@ -138,12 +138,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="flex-col-stretch gap-4">
     <NCard :bordered="false" class="card-wrapper" size="small">
-    <div class="mb-16px flex flex-wrap items-start justify-between gap-12px">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div>
         <h2 class="text-18px font-500">系统配置</h2>
-        <p class="mt-4px text-13px text-gray-500">维护对象存储（S3 兼容）配置，保存后立即生效，无需重启服务。</p>
+        <p class="mt-1 text-13px text-gray-500">维护对象存储（S3 兼容）配置，保存后立即生效，无需重启服务。</p>
       </div>
       <NSpace :size="8" align="center" :wrap="true">
         <NTag :type="sourceTag.type" size="small" :bordered="false">{{ sourceTag.label }}</NTag>
@@ -159,87 +159,87 @@ onMounted(() => {
       </NSpace>
     </div>
 
-    <NAlert class="mb-12px" type="default" :bordered="false" :show-icon="false">
+    <NAlert class="mb-3" type="default" :bordered="false" :show-icon="false">
       <span>
         <span class="font-500">bucket 留空并保存</span>
         即关闭对象存储：构建产物将留在服务器本地，由后端直传下载。
       </span>
-      <span v-if="storageRaw" class="ml-4px text-gray-500">当前配置来自配置页并已持久化。</span>
+      <span v-if="storageRaw" class="ml-1 text-gray-500">当前配置来自配置页并已持久化。</span>
     </NAlert>
 
     <NAlert
       v-if="unreachableMessage"
-      class="mb-12px"
+      class="mb-3"
       type="error"
       :bordered="false"
       :show-icon="true"
       title="配置已保存，但对象存储连接失败"
     >
       <div class="break-all">{{ unreachableMessage }}</div>
-      <div class="mt-4px text-12px text-gray-500">
+      <div class="mt-1 text-12px text-gray-500">
         配置已写入并生效；保存时的连通性探测（HeadBucket）失败，请检查 endpoint / bucket / 凭据或网络后再次保存。
       </div>
     </NAlert>
 
-    <NAlert v-if="settingsError" class="mb-12px" type="warning" :bordered="false" :show-icon="true" :title="settingsError.title">
+    <NAlert v-if="settingsError" class="mb-3" type="warning" :bordered="false" :show-icon="true" :title="settingsError.title">
       {{ settingsError.message }}
     </NAlert>
 
-    <NForm label-placement="top" :show-require-mark="false" :model="form">
-      <NGrid cols="1 m:2" responsive="screen" :x-gap="16">
-        <NFormItemGi label="Endpoint" path="endpoint" span="2 m:1">
+    <n-form :model="form" :label-width="150" label-placement="left" size="medium" class="py-2">
+      
+        <n-form-item label="Endpoint" path="endpoint" >
           <NInput
             v-model:value="form.endpoint"
             :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
             placeholder="https://oss.example.com"
           />
-        </NFormItemGi>
-        <NFormItemGi label="Region" path="region">
+        </n-form-item>
+        <n-form-item label="Region" path="region">
           <NInput
             v-model:value="form.region"
             :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
             placeholder="us-east-1（可选）"
           />
-        </NFormItemGi>
-        <NFormItemGi label="Bucket" path="bucket">
+        </n-form-item>
+        <n-form-item label="Bucket" path="bucket">
           <NInput
             v-model:value="form.bucket"
             :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
             placeholder="留空 = 关闭对象存储"
           />
-        </NFormItemGi>
-        <NFormItemGi label="Prefix" path="prefix">
+        </n-form-item>
+        <n-form-item label="Prefix" path="prefix">
           <NInput
             v-model:value="form.prefix"
             :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
             placeholder="iso-builder（可选）"
           />
-        </NFormItemGi>
-        <NFormItemGi label="Public base" path="public_base">
+        </n-form-item>
+        <n-form-item label="Public base" path="public_base">
           <NInput
             v-model:value="form.public_base"
             :input-props="{ class: 'font-mono', spellcheck: 'false', autocomplete: 'off' }"
             placeholder="CDN 或对外访问前缀（可选）"
           />
-        </NFormItemGi>
-        <NFormItemGi label="预签名有效期（秒）" path="presign_ttl_seconds">
+        </n-form-item>
+        <n-form-item label="预签名有效期（秒）" path="presign_ttl_seconds">
           <NInputNumber v-model:value="form.presign_ttl_seconds" class="w-full" :min="60" :step="3600">
             <template #suffix>秒</template>
           </NInputNumber>
-        </NFormItemGi>
-        <NFormItemGi label="Path style" path="path_style">
-          <div class="flex flex-wrap items-center gap-8px">
+        </n-form-item>
+        <n-form-item label="Path style" path="path_style">
+          <div class="flex flex-wrap items-center gap-2">
             <NSwitch v-model:value="form.path_style" />
             <span class="text-13px text-gray-500">MinIO 等自建服务通常需要开启</span>
           </div>
-        </NFormItemGi>
-        <NFormItemGi label="跳过 TLS 校验" path="insecure_tls">
-          <div class="flex flex-wrap items-center gap-8px">
+        </n-form-item>
+        <n-form-item label="跳过 TLS 校验" path="insecure_tls">
+          <div class="flex flex-wrap items-center gap-2">
             <NSwitch v-model:value="form.insecure_tls" />
             <span class="text-13px text-gray-500">自签名证书时使用</span>
           </div>
-        </NFormItemGi>
-        <NFormItemGi label="Access Key" path="access_key">
+        </n-form-item>
+        <n-form-item label="Access Key" path="access_key">
           <NInput
             v-model:value="form.access_key"
             type="password"
@@ -247,8 +247,8 @@ onMounted(() => {
             :placeholder="accessKeyPlaceholder"
             :input-props="{ spellcheck: 'false', autocomplete: 'new-password' }"
           />
-        </NFormItemGi>
-        <NFormItemGi label="Secret Key" path="secret_key">
+        </n-form-item>
+        <n-form-item label="Secret Key" path="secret_key">
           <NInput
             v-model:value="form.secret_key"
             type="password"
@@ -256,14 +256,13 @@ onMounted(() => {
             :placeholder="secretKeyPlaceholder"
             :input-props="{ spellcheck: 'false', autocomplete: 'new-password' }"
           />
-        </NFormItemGi>
-      </NGrid>
-
-      <div class="flex flex-wrap items-center gap-12px">
+        </n-form-item>
+      
+      <div class="flex flex-wrap items-center gap-3">
         <NButton type="primary" :loading="saving" @click="handleSave">保存</NButton>
         <span class="text-13px text-gray-500">保存时会自动探测对象存储连通性（即测试连接），失败不影响配置留存。</span>
       </div>
-    </NForm>
+    </n-form>
     </NCard>
   </div>
 </template>

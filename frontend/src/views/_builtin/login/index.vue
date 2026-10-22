@@ -55,18 +55,18 @@ async function handleLogin() {
             @switch="themeStore.toggleThemeScheme"
           />
         </header>
-        <main class="pt-24px">
+        <main class="pt-6">
           <h3 class="text-18px text-primary font-medium">访问认证</h3>
 
-          <NAlert v-if="!authRequired" class="mt-16px" type="info" :bordered="false">
+          <NAlert v-if="!authRequired" class="mt-4" type="info" :bordered="false">
             后端未开启令牌认证，可直接进入控制台。
           </NAlert>
 
           <template v-else>
-            <p class="mt-12px text-14px text-gray-500">
+            <p class="mt-3 text-14px text-gray-500">
               后端已开启认证，请输入与 <code class="font-mono">ISOBUILDER_AUTH_TOKEN</code> 一致的访问令牌。
             </p>
-            <div class="pt-20px">
+            <div class="pt-5">
               <NInput
                 v-model:value="token"
                 type="password"
@@ -80,15 +80,15 @@ async function handleLogin() {
                 </template>
               </NInput>
             </div>
-            <NAlert v-if="errorMsg" class="mt-12px" type="error" :bordered="false">{{ errorMsg }}</NAlert>
-            <NButton class="mt-24px w-full" type="primary" :loading="authStore.loginLoading" @click="handleLogin">
+            <NAlert v-if="errorMsg" class="mt-3" type="error" :bordered="false">{{ errorMsg }}</NAlert>
+            <NButton class="mt-6 w-full" type="primary" :loading="authStore.loginLoading" @click="handleLogin">
               进入控制台
             </NButton>
           </template>
 
           <NButton
             v-if="!authRequired"
-            class="mt-24px w-full"
+            class="mt-6 w-full"
             type="primary"
             @click="routerPushByKey('root')"
           >

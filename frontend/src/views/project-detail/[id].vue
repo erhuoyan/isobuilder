@@ -180,16 +180,16 @@ onMounted(async () => {
 
     <NSpace v-else-if="project" vertical :size="16">
       <NCard :bordered="false" class="card-wrapper" size="small">
-        <div class="flex flex-wrap items-start justify-between gap-12px">
+        <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-8px">
+            <div class="flex flex-wrap items-center gap-2">
               <h2 class="text-18px font-500">{{ project.name }}</h2>
               <NTag size="small" :bordered="false">{{ project.arch }}</NTag>
               <NTag v-if="activeBuild" size="small" :bordered="false" type="info">
                 {{ activeBuild.status === 'queued' ? '排队中' : `构建中 ${activeBuild.progress}%` }}
               </NTag>
             </div>
-            <p class="mt-6px text-13px text-gray-500">{{ project.description || '暂无描述' }}</p>
+            <p class="mt-1.5 text-13px text-gray-500">{{ project.description || '暂无描述' }}</p>
           </div>
           <NSpace :size="8">
             <NButton @click="routerPushByKey('project-edit', { params: { id: project.id } })">
@@ -218,14 +218,14 @@ onMounted(async () => {
           </NSpace>
         </div>
 
-        <NAlert v-if="activeBuild" class="mt-16px" type="info" :bordered="false">
+        <NAlert v-if="activeBuild" class="mt-4" type="info" :bordered="false">
           <span>
             正在构建，最新进度
             <span class="font-mono">{{ activeBuild.progress }}%</span>
             ，每 3 秒自动刷新。
           </span>
           <NButton
-            class="ml-8px"
+            class="ml-2"
             text
             type="primary"
             @click="routerPushByKey('build-detail', { params: { id: activeBuild.id } })"
@@ -249,7 +249,7 @@ onMounted(async () => {
           <NDescriptionsItem label="kickstart">
             <template v-if="project.kickstart">
               <span class="font-mono">{{ project.kickstart.name }}</span>
-              <span class="ml-6px text-12px text-gray-500">{{ project.kickstart.arch }}</span>
+              <span class="ml-1.5 text-12px text-gray-500">{{ project.kickstart.arch }}</span>
             </template>
             <span v-else class="text-gray-400">—</span>
           </NDescriptionsItem>
@@ -272,13 +272,13 @@ onMounted(async () => {
           </NDescriptionsItem>
           <NDescriptionsItem label="主机清单">
             <span class="font-mono">{{ project.hosts_count }} 台</span>
-            <span class="ml-6px text-12px text-gray-500">{{ project.hosts_format.toUpperCase() }}</span>
+            <span class="ml-1.5 text-12px text-gray-500">{{ project.hosts_format.toUpperCase() }}</span>
           </NDescriptionsItem>
           <NDescriptionsItem label="更新时间">
             <span class="font-mono text-13px">{{ formatDateTime(project.updated_at) }}</span>
           </NDescriptionsItem>
         </NDescriptions>
-        <div class="mt-12px">
+        <div class="mt-3">
           <CopyText label="项目 ID" :text="project.id" />
         </div>
       </NCard>
@@ -304,7 +304,7 @@ onMounted(async () => {
           :single-line="false"
         >
           <template #empty>
-            <div class="py-32px">
+            <div class="py-8">
               <NEmpty description="还没有构建记录，点击「开始构建」生成第一份镜像" />
             </div>
           </template>

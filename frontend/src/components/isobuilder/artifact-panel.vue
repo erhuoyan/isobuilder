@@ -115,15 +115,15 @@ function handleDownload() {
         </NDescriptionsItem>
       </NDescriptions>
 
-      <div class="mt-12px">
+      <div class="mt-3">
         <CopyText label="SHA256" :text="current.sha256" :wrap="true" />
       </div>
 
-      <div class="mt-8px">
+      <div class="mt-2">
         <CopyText label="下载链接" :text="downloadUrl" />
       </div>
 
-      <p v-if="isPresigned" class="mt-8px text-12px text-gray-500">
+      <p v-if="isPresigned" class="mt-2 text-12px text-gray-500">
         <template v-if="expired">
           <span class="text-danger">预签名链接已于 {{ formatDateTime(expiresAt) }} 过期，请点击「刷新链接」。</span>
         </template>
@@ -132,7 +132,7 @@ function handleDownload() {
           （剩余 <span class="font-mono">{{ remainingText }}</span>），过期后可刷新。
         </template>
       </p>
-      <p v-else class="mt-8px text-12px text-gray-500">当前由服务端直接下载（storage=local），链接长期有效。</p>
+      <p v-else class="mt-2 text-12px text-gray-500">当前由服务端直接下载（storage=local），链接长期有效。</p>
     </div>
   </NCard>
 </template>

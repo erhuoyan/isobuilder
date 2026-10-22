@@ -174,57 +174,64 @@ onMounted(async () => {
 
     <NSpace v-else-if="project" vertical :size="16">
       <NCard :bordered="false" class="card-wrapper" size="small" title="编辑项目">
-        <NForm size="small" label-placement="top" :show-feedback="false">
-          <NGrid :cols="2" :x-gap="16">
-            <NFormItemGi label="项目名称">
-              <NInput v-model:value="form.name" maxlength="100" show-count placeholder="例如：京西机房 perf 批次" />
-            </NFormItemGi>
-            <NFormItemGi label="描述">
-              <NInput v-model:value="form.description" placeholder="选填，说明这批主机的用途、机房或批次" />
-            </NFormItemGi>
-            <NFormItemGi :label="`基础镜像（当前架构 ${project.arch}）`">
-              <NSelect
-                v-model:value="form.iso_id"
-                :options="isoOptions"
-                clearable
-                placeholder="选择一个状态为「可用」的镜像"
-              />
-            </NFormItemGi>
-            <NFormItemGi label="应答模板">
-              <NSelect
-                v-model:value="form.kickstart_id"
-                :options="kickstartOptions"
-                clearable
-                placeholder="选择 kickstart 模板"
-              />
-            </NFormItemGi>
-          </NGrid>
-        </NForm>
+        <!-- 与模板 basicForm 一致：label 在左、宽度固定，form-item 自带纵向间距 -->
+        <n-form
+          ref="formRef"
+          :model="form"
+          :label-width="120"
+          label-placement="left"
+          size="medium"
+          class="py-4"
+        >
+          <n-form-item label="项目名称" path="name">
+            <n-input v-model:value="form.name" maxlength="100" show-count placeholder="例如：京西机房 perf 批次" />
+          </n-form-item>
+          <n-form-item label="描述" path="description">
+            <n-input v-model:value="form.description" placeholder="选填，说明这批主机的用途、机房或批次" />
+          </n-form-item>
+          <n-form-item :label="`基础镜像`" path="iso_id">
+            <n-select
+              v-model:value="form.iso_id"
+              :options="isoOptions"
+              clearable
+              placeholder="选择一个状态为「可用」的镜像"
+            />
+          </n-form-item>
+          <n-form-item label="应答模板" path="kickstart_id">
+            <n-select
+              v-model:value="form.kickstart_id"
+              :options="kickstartOptions"
+              clearable
+              placeholder="选择 kickstart 模板"
+            />
+          </n-form-item>
+          <n-form-item label="当前架构">
+            <n-tag :bordered="false" size="small">{{ project.arch }}</n-tag>
+          </n-form-item>
+        </n-form>
 
-        <NCollapse class="mt-4px">
+        <NCollapse class="mt-1">
           <NCollapseItem title="高级项（ISO 卷标与产物文件名）" name="advanced">
-            <NForm size="small" label-placement="top" :show-feedback="false">
-              <NGrid :cols="2" :x-gap="16">
-                <NFormItemGi label="ISO 卷标">
-                  <NInput v-model:value="form.iso_label" placeholder="留空 → 构建时从原版 ISO 自动探测" />
-                </NFormItemGi>
-                <NFormItemGi label="产物文件名">
-                  <NInput v-model:value="form.output_name" placeholder="留空 → 构建时自动生成" />
-                </NFormItemGi>
-              </NGrid>
-            </NForm>
+            <n-form :model="form" :label-width="120" label-placement="left" size="medium" class="py-2">
+              <n-form-item label="ISO 卷标">
+                <n-input v-model:value="form.iso_label" placeholder="留空则构建时从原版 ISO 自动探测" />
+              </n-form-item>
+              <n-form-item label="产物文件名">
+                <n-input v-model:value="form.output_name" placeholder="留空则构建时自动生成" />
+              </n-form-item>
+            </n-form>
           </NCollapseItem>
           <NCollapseItem title="自定义脚本" name="post-script">
-            <NForm size="small" label-placement="top" :show-feedback="false">
-              <NFormItem label="脚本库（可复用）">
+            <n-form :model="form" :label-width="120" label-placement="left" size="medium" class="py-2">
+              <n-form-item label="脚本库">
                 <NSelect
                   v-model:value="selectedScriptId"
                   :options="scriptOptions"
                   clearable
                   placeholder="从脚本库选一个；也可只用下方追加脚本"
                 />
-              </NFormItem>
-              <NFormItem label="从 U 盘注入文件（可选）">
+              </n-form-item>
+              <n-form-item label="U 盘注入">
                 <NSelect
                   v-model:value="form.payload_mode"
                   :options="[
@@ -233,8 +240,8 @@ onMounted(async () => {
                     { label: '卷标优先，未命中则扫描', value: 'auto' }
                   ]"
                 />
-              </NFormItem>
-              <NFormItem label="本项目追加脚本">
+              </n-form-item>
+              <n-form-item label="追加脚本">
                 <NInput
                   v-model:value="postScript"
                   type="textarea"
@@ -242,8 +249,8 @@ onMounted(async () => {
                   placeholder="留空则不追加。库脚本先执行，这里的内容排在其后。"
                   class="font-mono"
                 />
-              </NFormItem>
-            </NForm>
+              </n-form-item>
+            </n-form>
           </NCollapseItem>
         </NCollapse>
       </NCard>

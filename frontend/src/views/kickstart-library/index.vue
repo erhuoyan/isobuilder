@@ -212,7 +212,7 @@ const columns: DataTableColumns<Api.IsoBuilder.Kickstart> = [
     title: '名称',
     minWidth: 220,
     render: row =>
-      h('div', { class: 'min-w-0 py-4px' }, [
+      h('div', { class: 'min-w-0 py-1' }, [
         h('span', { class: 'truncate text-15px font-500', title: row.name }, row.name)
       ])
   },
@@ -311,12 +311,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="flex-col-stretch gap-4">
     <NCard :bordered="false" class="card-wrapper" size="medium">
-    <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="text-18px font-500">Kickstart 模板库</h2>
-        <p class="mt-4px text-13px text-gray-500">内置与自定义的应答模板，构建时注入到原版镜像中完成无人值守安装。</p>
+        <p class="mt-1 text-13px text-gray-500">内置与自定义的应答模板，构建时注入到原版镜像中完成无人值守安装。</p>
       </div>
       <NSpace :size="8" :wrap="true">
         <NButton :loading="loading" @click="loadKickstarts()">
@@ -345,7 +345,7 @@ onMounted(() => {
       :single-line="false"
     >
       <template #empty>
-        <div class="py-40px">
+        <div class="py-10">
           <NEmpty description="还没有模板，上传一个 .ks 文件试试" />
         </div>
       </template>
@@ -357,7 +357,7 @@ onMounted(() => {
           <NButton type="primary" :disabled="!previewContent" @click="copyPreview">复制全文</NButton>
         </template>
         <NSpin :show="previewLoading">
-          <pre class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-12px font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
+          <pre class="m-0 max-h-[calc(100vh-180px)] overflow-y-auto whitespace-pre-wrap rounded-6px bg-gray-50 p-3 font-mono text-12px dark:bg-gray-900">{{ previewContent || (previewLoading ? '' : '模板正文为空') }}</pre>
         </NSpin>
       </NDrawerContent>
     </NDrawer>
@@ -365,7 +365,7 @@ onMounted(() => {
     <NDrawer v-model:show="editShow" placement="right" width="min(100vw, 720px)">
       <NDrawerContent :title="`编辑模板 · ${editTarget?.name ?? ''}`" :native-scrollbar="false" closable>
         <NSpin :show="editLoading">
-          <div class="flex flex-col gap-16px">
+          <div class="flex flex-col gap-4">
             <NForm label-placement="top" :show-require-mark="false">
               <NFormItem label="名称">
                 <NInput v-model:value="editForm.name" :maxlength="80" />
@@ -409,10 +409,10 @@ onMounted(() => {
 
     <NDrawer v-model:show="uploadShow" placement="right" width="min(100vw, 480px)">
       <NDrawerContent title="上传 Kickstart 模板" :native-scrollbar="false" closable>
-        <div class="flex flex-col gap-12px">
+        <div class="flex flex-col gap-3">
           <input ref="uploadInputRef" type="file" accept=".ks" class="hidden" @change="handleFileChange" />
 
-          <div class="flex flex-wrap items-center gap-8px">
+          <div class="flex flex-wrap items-center gap-2">
             <NButton @click="uploadInputRef?.click()">
               <template #icon>
                 <SvgIcon icon="mdi:folder-open-outline" />
@@ -422,7 +422,7 @@ onMounted(() => {
             <NButton v-if="uploadFile" size="small" text type="error" @click="resetUploadForm">移除</NButton>
           </div>
 
-          <div v-if="uploadFile" class="rounded-6px bg-gray-50 px-12px py-8px dark:bg-gray-900">
+          <div v-if="uploadFile" class="rounded-6px bg-gray-50 px-3 py-2 dark:bg-gray-900">
             <div class="break-all text-13px">{{ uploadFile.name }}</div>
             <div class="font-mono text-12px text-gray-400">{{ formatBytes(uploadFile.size) }}</div>
           </div>

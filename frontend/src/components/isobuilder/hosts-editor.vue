@@ -604,8 +604,8 @@ watch(
 </script>
 
 <template>
-  <div class="flex flex-col gap-12px">
-    <div class="flex flex-wrap items-center justify-between gap-8px">
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <span class="text-13px text-gray-500">
         每行一台主机；填 MAC 即单口，再填 MAC2 则为 bond
       </span>
@@ -677,7 +677,7 @@ watch(
             if (!list.length) return h('span', { class: 'text-12px text-green-600' }, '✓');
             return h(
               'div',
-              { class: 'flex flex-col gap-2px' },
+              { class: 'flex flex-col gap-0.5' },
               list.map(msg => h('div', { class: 'text-12px text-red-500' }, msg))
             );
           }
@@ -706,7 +706,7 @@ watch(
       :row-key="(row: HostRow) => row.uid"
       :scroll-x="1700"
       :max-height="420"
-      size="small"
+      size="medium"
       :bordered="false"
       :single-line="false"
     >
@@ -737,7 +737,7 @@ watch(
       <NAlert size="small" type="error" :bordered="false">
         校验未通过，共 {{ result.errors.length }} 处问题（已在表格「问题」列标出）
       </NAlert>
-      <div v-if="globalErrors.length" class="flex flex-col gap-2px">
+      <div v-if="globalErrors.length" class="flex flex-col gap-0.5">
         <div v-for="(error, index) in globalErrors" :key="index" class="text-12px text-red-500">
           清单级 · {{ error.field || '清单' }}：{{ error.message }}
         </div>
@@ -746,4 +746,22 @@ watch(
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+  /**
+   * 每行是一个可编辑输入框，Naive 默认单元格只包住控件本体，
+   * 行与行之间几乎没有呼吸感。这里给单元格纵向留白，
+   * 并补一条极浅的分隔线，密集数据才读得清。
+   */
+  :deep(.n-data-table-td) {
+    padding: 10px 8px;
+  }
+
+  :deep(.n-data-table-tr:not(:last-child) > .n-data-table-td) {
+    border-bottom: 1px solid rgb(239 240 245);
+  }
+
+  /* 表格头稍微压暗，与数据区拉开层次 */
+  :deep(.n-data-table-th) {
+    background-color: rgb(250 250 252);
+  }
+</style>

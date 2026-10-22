@@ -124,7 +124,7 @@ const columns: DataTableColumns<Api.IsoBuilder.Iso> = [
     title: '名称',
     minWidth: 260,
     render: row =>
-      h('div', { class: 'min-w-0 py-4px' }, [
+      h('div', { class: 'min-w-0 py-1' }, [
         h('div', { class: 'truncate text-15px font-500', title: row.name }, row.name),
         h('div', { class: 'truncate font-mono text-12px text-gray-400' }, row.filename)
       ])
@@ -205,12 +205,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="flex-col-stretch gap-4">
     <NCard :bordered="false" class="card-wrapper" size="medium">
-    <div class="mb-16px flex flex-wrap items-center justify-between gap-12px">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h2 class="text-18px font-500">镜像库</h2>
-        <p class="mt-4px text-13px text-gray-500">上传或登记基础 ISO，构建时作为原版镜像注入 kickstart 与主机清单。</p>
+        <p class="mt-1 text-13px text-gray-500">上传或登记基础 ISO，构建时作为原版镜像注入 kickstart 与主机清单。</p>
       </div>
       <NSpace :size="8" :wrap="true">
         <NButton :loading="loading" @click="loadIsos()">
@@ -234,7 +234,7 @@ onMounted(() => {
       </NSpace>
     </div>
 
-    <NAlert v-if="activeCount > 0" class="mb-12px" type="info" :bordered="false" :show-icon="true">
+    <NAlert v-if="activeCount > 0" class="mb-3" type="info" :bordered="false" :show-icon="true">
       有 {{ activeCount }} 个镜像正在下载或计算校验值，列表每 3 秒自动刷新。
     </NAlert>
 
@@ -249,7 +249,7 @@ onMounted(() => {
       :single-line="false"
     >
       <template #empty>
-        <div class="py-40px">
+        <div class="py-10">
           <NEmpty description="还没有基础镜像，先用「链接导入」拉取一个 ISO 吧" />
         </div>
       </template>
