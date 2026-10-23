@@ -38,6 +38,12 @@ VM_CD_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD"
 VM_INSERT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.InsertMedia"
 VM_EJECT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.EjectMedia"
 
+# VNC 开关在 NetworkProtocol 的 OEM 段（标准 RFB 字段只读），
+# 密码在 VncService（最长 8 位，超长报 StringValueTooLong）。
+NETPROTO_PATH = "/redfish/v1/Managers/1/NetworkProtocol"
+VNC_SERVICE_PATH = "/redfish/v1/Managers/1/VncService"
+VNC_PASSWORD_MAX = 8
+
 # 用户输入 → Redfish BootSourceOverrideTarget
 TARGET_MAP = {
     "none": "None",
@@ -210,7 +216,7 @@ def process_one(ip, user, passwd, opts):
     返回 dict: bmc_ip, sn, power_before, target_before, target_after, status, error
     """
     r = {"bmc_ip": ip, "sn": "", "power_before": "", "target_before": "",
-         "target_after": "", "iso_before": "", "status": "", "error": ""}
+         "target_after": "", "iso_before": "", "vnc": "", "status": "", "error": ""}
 
     sysdata, etag = redfish_get(ip, user, passwd, SYSTEM_PATH)
     if not sysdata:
@@ -233,10 +239,77 @@ def process_one(ip, user, passwd, opts):
     # ── 只查询 ───────────────────────────────────────────────────────────
     if opts["status"]:
         r["target_after"] = r["target_before"]
+        net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
+        vnc = (net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
+        r["vnc"] = "on" if vnc.get("ProtocolEnabled") else "off"
         r["status"] = "OK"
         return r
 
     vm_note = ""
+
+    # ── VNC 开关 / 改密码 ────────────────────────────────────────────────
+    if opts["vnc"]:
+        want_on = opts["vnc"] == "on"
+        if opts["dry_run"]:
+            r["vnc"] = "on" if want_on else "off"
+            r["status"] = "DRY_RUN"
+            r["target_after"] = r["target_before"]
+            return r
+
+        # 开关：标准 RFB 字段只读，必须写 OEM 段
+        net, net_etag = redfish_get(ip, user, passwd, NETPROTO_PATH)
+        if net is None:
+            r["status"] = "FAIL"
+            r["error"] = "无法读取 NetworkProtocol"
+            return r
+        code, body = redfish_patch(
+            ip, user, passwd, NETPROTO_PATH,
+            {"Oem": {"JD": {"VNC": {"ProtocolEnabled": want_on}}}},
+            etag=net_etag,
+        )
+        if code != 200:
+            r["target_after"] = r["target_before"]
+            r["status"] = "FAIL"
+            r["error"] = f"VNC 开关 HTTP {code}: {_brief(body)}"
+            return r
+
+        notes = ["VNC开" if want_on else "VNC关"]
+
+        # 密码（可选，仅开启时有意义）
+        if opts["vnc_pass"]:
+            if len(opts["vnc_pass"]) > VNC_PASSWORD_MAX:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = (f"VNC 密码最多 {VNC_PASSWORD_MAX} 位"
+                              f"（当前 {len(opts['vnc_pass'])} 位）")
+                return r
+            _, vnc_etag = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
+            code, body = redfish_patch(
+                ip, user, passwd, VNC_SERVICE_PATH,
+                {"Password": opts["vnc_pass"]},
+                etag=vnc_etag,
+            )
+            if code != 200:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = f"VNC 密码 HTTP {code}: {_brief(body)}"
+                return r
+            notes.append("密码已设")
+
+        # 回读确认，避免 200 假成功
+        net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
+        actual = bool((net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
+                      .get("ProtocolEnabled"))
+        r["vnc"] = "on" if actual else "off"
+        if actual != want_on:
+            r["target_after"] = r["target_before"]
+            r["status"] = "FAIL"
+            r["error"] = f"VNC 写入后状态不符（期望 {'on' if want_on else 'off'}，实际 {r['vnc']}）"
+            return r
+
+        r["status"] = "OK(" + "+".join(notes) + ")"
+        r["target_after"] = r["target_before"]
+        return r
 
     # 同一个镜像已挂载时无需反复弹/挂（批量重跑时省掉几十秒）
     same_iso = (opts["iso"] and cur_inserted
@@ -495,6 +568,10 @@ def main():
     parser.add_argument("--eject", action="store_true", help="弹出虚拟光驱镜像")
     parser.add_argument("--vm-user", metavar="USER", help="镜像服务器用户名 (可选)")
     parser.add_argument("--vm-pass", metavar="PASS", help="镜像服务器密码 (可选)")
+    parser.add_argument("--vnc", choices=["on", "off"], metavar="{on,off}",
+                        help="开启/关闭 VNC（远程画面，配合 --vnc-pass 设密码）")
+    parser.add_argument("--vnc-pass", metavar="PASS",
+                        help=f"VNC 密码，最多 {VNC_PASSWORD_MAX} 位")
     parser.add_argument("--status", action="store_true", help="只查询，不修改")
     parser.add_argument("--clear", action="store_true", help="清除引导重定向 (= -t none)")
     parser.add_argument("--dry-run", action="store_true", help="只读不写")
@@ -515,8 +592,18 @@ def main():
     if args.clear and args.target:
         print("错误: --clear 与 -t 互斥", file=sys.stderr)
         sys.exit(1)
-    if args.status and (args.target or args.reset or args.iso or args.eject):
+    if args.status and (args.target or args.reset or args.iso or args.eject or args.vnc):
         print("错误: --status 只查询，不能与其他动作组合", file=sys.stderr)
+        sys.exit(1)
+    if args.vnc_pass and not args.vnc:
+        print("错误: --vnc-pass 需要配合 --vnc on", file=sys.stderr)
+        sys.exit(1)
+    if args.vnc_pass and len(args.vnc_pass) > VNC_PASSWORD_MAX:
+        print(f"错误: VNC 密码最多 {VNC_PASSWORD_MAX} 位（当前 {len(args.vnc_pass)} 位）",
+              file=sys.stderr)
+        sys.exit(1)
+    if args.vnc and (args.target or args.iso or args.eject or args.reset):
+        print("错误: --vnc 是独立动作，不能与引导/ISO/重启组合", file=sys.stderr)
         sys.exit(1)
 
     target = None
@@ -532,9 +619,9 @@ def main():
 
     # --reset 单独使用 = 只重启，不改引导（例：让 BIOS pending 生效）
     reset_only = args.reset and not any([args.iso, args.eject, target])
-    if not any([args.status, args.eject, args.iso, target, args.reset]):
+    if not any([args.status, args.eject, args.iso, target, args.reset, args.vnc]):
         print("错误: 需要指定动作：-t TARGET / --status / --eject / --clear / "
-              "--iso URL / --reset", file=sys.stderr)
+              "--iso URL / --reset / --vnc", file=sys.stderr)
         sys.exit(1)
 
     # 提前校验 ISO URL，避免批量跑完才发现统统格式错误
@@ -565,6 +652,8 @@ def main():
         "dry_run": args.dry_run,
         "wait": args.wait,
         "reset_only": reset_only,
+        "vnc": args.vnc,
+        "vnc_pass": args.vnc_pass,
     }
 
     output = args.output
@@ -599,6 +688,8 @@ def main():
             bits.append(f"引导={target}/{mode}")
         if args.reset:
             bits.append(f"重启({args.reset_type})")
+        if args.vnc:
+            bits.append(f"VNC={args.vnc}" + ("(设密码)" if args.vnc_pass else ""))
         action = " + ".join(bits) + (" [DRY RUN]" if args.dry_run else "")
 
     total = len(hosts)
@@ -623,9 +714,10 @@ def main():
             else:
                 tgt = r["target_after"]
             iso = f" ISO={r['iso_before']}" if r["iso_before"] else ""
+            vnc = f"  VNC={r['vnc']}" if r["vnc"] else ""
             print(
                 f"  [{done}/{total}] {r['bmc_ip']} SN={r['sn']} "
-                f"电源={r['power_before']}{iso} 引导={tgt} [{r['status']}]"
+                f"电源={r['power_before']}{iso} 引导={tgt}{vnc} [{r['status']}]"
                 + (f" ERROR: {r['error']}" if r["error"] else ""),
                 file=sys.stderr,
             )
@@ -635,10 +727,10 @@ def main():
     with open(output, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["bmc_ip", "sn", "power_before", "iso_before",
-                    "target_before", "target_after", "status", "error"])
+                    "target_before", "target_after", "vnc", "status", "error"])
         for r in results:
             w.writerow([r["bmc_ip"], r["sn"], r["power_before"], r["iso_before"],
-                        r["target_before"], r["target_after"],
+                        r["target_before"], r["target_after"], r["vnc"],
                         r["status"], r["error"]])
 
     ok = sum(1 for r in results if r["status"].startswith("OK"))
