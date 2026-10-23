@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -163,6 +164,45 @@ def redfish_post(ip, user, passwd, path, payload=None, timeout=30):
 #  单台处理
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _wait_vm_ready(ip, user, passwd, expect_inserted, timeout=90):
+    """
+    轮询 VirtualMedia，直到 Inserted 与预期一致。
+
+    InsertMedia/EjectMedia 是异步动作（HTTP 202 + Task），返回 202 只代表
+    "请求已受理"，镜像可能因网络/路径/权限问题挂载失败。必须回读实际状态，
+    否则失败会被当成成功。
+    """
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        data, _ = redfish_get(ip, user, passwd, VM_CD_PATH)
+        if data:
+            last = data
+            if bool(data.get("Inserted")) == expect_inserted:
+                return data
+        time.sleep(2)
+    return last
+
+
+def _check_iso_url(url):
+    """校验镜像 URL 形式，返回错误消息或 None。"""
+    if url.lower().startswith("nfs://"):
+        rest = url[6:]
+        if "/" not in rest:
+            return "NFS URL 缺少路径，应为 nfs://<host>/<服务器绝对路径>"
+        host, path = rest.split("/", 1)
+        if not host:
+            return "NFS URL 缺少主机名"
+        # 常见错误：填了本机挂载点而不是服务器导出路径
+        if path.startswith(("mnt/", "media/", "mount/")):
+            return (f"NFS 路径 '{path}' 看起来是本机挂载点；"
+                    "应填 BMC 直接访问的服务器绝对路径，如 /export/iso/x.iso")
+        return None
+    if url.lower().startswith(("https://", "cifs://", "smb://")):
+        return None
+    return f"不支持的协议: {url}（仅支持 nfs:// / https:// / cifs://）"
+
+
 def process_one(ip, user, passwd, opts):
     """
     对一台服务器执行：可选插入 ISO → 设置引导重定向 → 可选重启。
@@ -170,7 +210,7 @@ def process_one(ip, user, passwd, opts):
     返回 dict: bmc_ip, sn, power_before, target_before, target_after, status, error
     """
     r = {"bmc_ip": ip, "sn": "", "power_before": "", "target_before": "",
-         "target_after": "", "status": "", "error": ""}
+         "target_after": "", "iso_before": "", "status": "", "error": ""}
 
     sysdata, etag = redfish_get(ip, user, passwd, SYSTEM_PATH)
     if not sysdata:
@@ -185,34 +225,62 @@ def process_one(ip, user, passwd, opts):
     cur_enabled = boot.get("BootSourceOverrideEnabled", "Disabled")
     r["target_before"] = f"{cur_target}/{cur_enabled}"
 
+    # 虚拟光驱现状（决定插入前是否需要先弹旧盘）
+    vm_cur, _ = redfish_get(ip, user, passwd, VM_CD_PATH)
+    cur_inserted = bool((vm_cur or {}).get("Inserted"))
+    r["iso_before"] = (vm_cur or {}).get("ImageName") or ""
+
     # ── 只查询 ───────────────────────────────────────────────────────────
     if opts["status"]:
         r["target_after"] = r["target_before"]
         r["status"] = "OK"
         return r
 
-    # ── 纯弹盘 ───────────────────────────────────────────────────────────
-    if opts["eject"] and not opts["target"]:
+    vm_note = ""
+
+    # 同一个镜像已挂载时无需反复弹/挂（批量重跑时省掉几十秒）
+    same_iso = (opts["iso"] and cur_inserted
+                and (vm_cur or {}).get("Image") == opts["iso"])
+    if same_iso:
+        vm_note = "ISO已挂载+"
+
+    # ── 弹出 ISO（--eject，或插入新 ISO 前先弹旧盘）───────────────────────
+    should_eject = opts["eject"] or (opts["iso"] and cur_inserted and not same_iso)
+    if should_eject:
         if opts["dry_run"]:
-            r["status"] = "DRY_RUN"
-            r["target_after"] = r["target_before"]
-            return r
-        code, body = redfish_post(ip, user, passwd, VM_EJECT_PATH)
-        r["target_after"] = r["target_before"]
-        if code in (200, 202, 204):
-            r["status"] = "OK(已弹出)"
+            if not opts["target"] and not opts["iso"]:
+                r["target_after"] = r["target_before"]
+                r["status"] = "DRY_RUN"
+                return r
         else:
-            r["status"] = "FAIL"
-            r["error"] = f"EjectMedia HTTP {code}: {_brief(body)}"
-        return r
+            code, body = redfish_post(ip, user, passwd, VM_EJECT_PATH)
+            if code not in (200, 202, 204):
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = f"EjectMedia HTTP {code}: {_brief(body)}"
+                return r
+            vm = _wait_vm_ready(ip, user, passwd, False, opts["wait"])
+            if vm and vm.get("Inserted"):
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = "EjectMedia 未生效（Inserted 仍为 true）"
+                return r
+            if not opts["target"] and not opts["iso"]:
+                r["target_after"] = r["target_before"]
+                r["status"] = "OK(已弹出)"
+                return r
+            vm_note = "弹旧盘+"
 
     # ── 插入 ISO ─────────────────────────────────────────────────────────
-    if opts["iso"]:
+    if opts["iso"] and not same_iso:
         if opts["dry_run"]:
             r["target_after"] = r["target_before"]
             r["status"] = "DRY_RUN"
             return r
-        payload = {"Image": opts["iso"], "Inserted": True}
+
+        # 注意：华为 BMC 不接受 Inserted 字段（Base.1.0.ActionParameterUnknown），
+        # 只认 Image / TransferProtocolType / UserName / Password。
+        payload = {"Image": opts["iso"]}
         proto = _proto_of(opts["iso"])
         if proto:
             payload["TransferProtocolType"] = proto
@@ -227,6 +295,19 @@ def process_one(ip, user, passwd, opts):
             r["status"] = "FAIL"
             r["error"] = f"InsertMedia HTTP {code}: {_brief(body)}"
             return r
+
+        # 202 只是受理，回读确认真的挂上了
+        vm = _wait_vm_ready(ip, user, passwd, True, opts["wait"])
+        if not vm or not vm.get("Inserted"):
+            r["target_after"] = r["target_before"]
+            r["status"] = "FAIL"
+            detail = ""
+            if vm:
+                detail = f" (Image={vm.get('Image')}, Via={vm.get('ConnectedVia')})"
+            r["error"] = (f"InsertMedia 未生效{detail}；"
+                          "检查 BMC 能否访问该主机、路径是否为服务器绝对路径")
+            return r
+        vm_note += "已挂载ISO+"
 
     # ── 设置引导重定向 ───────────────────────────────────────────────────
     want_target = opts["target"]          # 已映射为 Redfish 值，可能为 None
@@ -266,7 +347,10 @@ def process_one(ip, user, passwd, opts):
 
     # ── 重启 ─────────────────────────────────────────────────────────────
     if not opts["reset"]:
-        r["status"] = "OK(已设置)" if changed else "SKIP(状态一致)"
+        if changed or vm_note:
+            r["status"] = f"OK({vm_note}已设置)"
+        else:
+            r["status"] = "SKIP(状态一致)"
         return r
 
     if opts["dry_run"]:
@@ -275,7 +359,8 @@ def process_one(ip, user, passwd, opts):
 
     code, body = redfish_post(ip, user, passwd, RESET_PATH, {"ResetType": reset_type})
     if code in (200, 202, 204):
-        r["status"] = f"OK(已设置并重启:{reset_type})" if changed else f"OK(已重启:{reset_type})"
+        tail = "已设置并重启" if changed else "已重启"
+        r["status"] = f"OK({vm_note}{tail}:{reset_type})"
     else:
         r["status"] = "FAIL"
         r["error"] = f"Reset HTTP {code}: {_brief(body)}"
@@ -409,6 +494,8 @@ def main():
     parser.add_argument("--status", action="store_true", help="只查询，不修改")
     parser.add_argument("--clear", action="store_true", help="清除引导重定向 (= -t none)")
     parser.add_argument("--dry-run", action="store_true", help="只读不写")
+    parser.add_argument("--wait", type=int, default=90, metavar="SEC",
+                        help="等待 ISO 挂载/弹出生效的超时秒数 (默认: 90)")
     parser.add_argument("-u", "--user", default=None, metavar="USER",
                         help="全局 BMC 用户名 (默认: %s)" % DEFAULT_USER)
     parser.add_argument("-p", "--password", default=None, metavar="PASS",
@@ -444,6 +531,13 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
+    # 提前校验 ISO URL，避免批量跑完才发现统统格式错误
+    if args.iso:
+        err = _check_iso_url(args.iso)
+        if err:
+            print(f"错误: {err}", file=sys.stderr)
+            sys.exit(1)
+
     if args.reset:
         allowed = {"On", "ForceOff", "GracefulShutdown", "ForceRestart",
                    "ForcePowerCycle", "PowerCycle", "Nmi"}
@@ -463,6 +557,7 @@ def main():
         "vm_pass": args.vm_pass,
         "status": args.status,
         "dry_run": args.dry_run,
+        "wait": args.wait,
     }
 
     output = args.output
@@ -520,9 +615,10 @@ def main():
                 tgt = f"{r['target_before']} → {r['target_after']}"
             else:
                 tgt = r["target_after"]
+            iso = f" ISO={r['iso_before']}" if r["iso_before"] else ""
             print(
                 f"  [{done}/{total}] {r['bmc_ip']} SN={r['sn']} "
-                f"电源={r['power_before']} 引导={tgt} [{r['status']}]"
+                f"电源={r['power_before']}{iso} 引导={tgt} [{r['status']}]"
                 + (f" ERROR: {r['error']}" if r["error"] else ""),
                 file=sys.stderr,
             )
@@ -531,10 +627,10 @@ def main():
 
     with open(output, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
-        w.writerow(["bmc_ip", "sn", "power_before", "target_before",
-                    "target_after", "status", "error"])
+        w.writerow(["bmc_ip", "sn", "power_before", "iso_before",
+                    "target_before", "target_after", "status", "error"])
         for r in results:
-            w.writerow([r["bmc_ip"], r["sn"], r["power_before"],
+            w.writerow([r["bmc_ip"], r["sn"], r["power_before"], r["iso_before"],
                         r["target_before"], r["target_after"],
                         r["status"], r["error"]])
 

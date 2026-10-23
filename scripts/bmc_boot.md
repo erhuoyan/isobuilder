@@ -29,6 +29,7 @@
 | `--status` | 只查询电源状态和当前引导源 |
 | `--clear` | 清除引导重定向（= `-t none`，同时置 `Disabled`） |
 | `--dry-run` | 只读不写 |
+| `--wait SEC` | 等待 ISO 挂载/弹出生效的超时（默认 90 秒） |
 | `-u, --user` | BMC 用户名（默认 `jdroot`） |
 | `-p, --password` | BMC 密码（默认 `JCss%6!8`） |
 | `-o, --output` | 输出 CSV 路径（默认 `bmc_boot_<时间戳>.csv`） |
@@ -170,14 +171,73 @@ python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe --reset -j 20
 
 `--iso` 支持三种协议，从 URL 前缀自动推断：
 
-| URL 前缀 | TransferProtocolType |
-|---|---|
-| `https://` | `HTTPS` |
-| `cifs://` 或 `smb://` | `CIFS` |
-| `nfs://` | `NFS` |
+| URL 前缀 | TransferProtocolType | 需要证书 |
+|---|---|---|
+| `nfs://` | `NFS` | ❌ |
+| `https://` | `HTTPS` | ✅ |
+| `cifs://` 或 `smb://` | `CIFS` | ❌ |
 
-镜像需要 BMC 能直接访问（BMC 自己发起下载，不是你本机）。若镜像服务器要认证，
-用 `--vm-user` / `--vm-pass`。
+**推荐 NFS**：华为 BMC 的 `EncryptionEnabled` 恒为 `True` 且不可配置
+（`EncryptionConfigurable: false`），HTTPS 必须用 BMC 信任的证书才可能成功；
+NFS 无此限制。实测 NFS 一次通过。
+
+### NFS 路径写法（关键）
+
+`nfs://` 后面是**服务器上的绝对路径**，不是客户端挂载点：
+
+```
+nfs://100.88.20.253/export/nfs-server-data/iso/foo.iso
+       ────────── ─────────────────────────────
+       服务器 IP    服务器上的绝对路径
+```
+
+脚本会校验并拦截常见错误（如误填 `/mnt/iso/x.iso`）。
+
+### 镜像服务器搭建（以 Ubuntu 为例）
+
+BMC 只在自己的网段内找服务器，所以镜像服务器必须和 BMC 同网段可达：
+
+```bash
+apt-get install -y nfs-kernel-server
+
+# 导出目录，只允许 BMC 网段只读访问
+echo '/export/iso 100.88.0.0/16(ro,sync,no_subtree_check,no_root_squash,insecure)' \
+  > /etc/exports
+
+systemctl enable --now rpcbind nfs-server
+exportfs -rv
+ss -tln | grep -E ':2049|:111'    # 确认监听
+```
+
+本地先自测（用真实 IP，不能用 127.0.0.1，会被 exports 拒绝）：
+
+```bash
+mkdir -p /mnt/t && mount -t nfs -o ro,nolock 100.88.20.253:/export/iso /mnt/t
+ls /mnt/t && umount /mnt/t
+```
+
+### 无公网环境的包安装
+
+内网机器装不了 `apt install` 时，在能上网的机器下载 deb 再传过去：
+
+```bash
+# 联网机器上（jammy）
+apt-get download nfs-kernel-server nfs-common rpcbind libnfsidmap1 keyutils
+# 或直接下：http://archive.ubuntu.com/ubuntu/pool/main/n/nfs-utils/
+
+scp *.deb root@内网机:/tmp/nfsdeb/
+ssh root@内网机 'dpkg -i /tmp/nfsdeb/*.deb'
+```
+
+依赖基本都已预装（libc6、libtirpc3、libevent-core、libkeyutils1 等），
+通常只缺这 5 个包。
+
+### 挂载是异步的
+
+`InsertMedia` / `EjectMedia` 返回 `HTTP 202` **只代表请求已受理**，
+实际挂载可能因网络、路径、权限失败。脚本会轮询 `VirtualMedia` 的
+`Inserted` 字段直到状态符合预期（`--wait` 控制超时，默认 90 秒），
+失败时明确报错而不是假报成功。
 
 > 镜像 URL 需能被 BMC 网段访问到。走 NAT/跳板机的路径不适用于这一步。
 
@@ -191,10 +251,35 @@ python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe --reset -j 20
 | `-t pxe` 设置（不重启） | ✅ 独立 curl 验证 `Pxe/Once` |
 | 重复设置同一目标 | ✅ `SKIP(状态一致)` |
 | `--clear` | ✅ 置为 `None/Disabled` |
-| `--eject`（空光驱） | ✅ |
+| `--eject` | ✅ 回读确认 `Inserted=false` |
 | `--dry-run` | ✅ 不写任何东西 |
-| `--reset` 真实重启 | ⚠️ 未实测（会重启生产机器），API 与 ResetType 已确认可用 |
-| `--iso` 真实插入 | ⚠️ 未实测（需真实可访问的镜像 URL） |
+| **NFS 挂载 3.5G ISO** | ✅ `Inserted=true, ConnectedVia=URI, Protocol=NFS` |
+| 重复挂载同一 ISO | ✅ 跳过重挂，1.4s（首次 8.5s） |
+| 挂载不存在的文件 | ✅ 正确 `FAIL` 并报错（旧版会假报成功） |
+| `--reset` 真实重启 + 从 ISO 引导 | ✅ 进入安装程序 |
+
+### 实测踩到的坑
+
+| 问题 | 现象 | 修复 |
+|---|---|---|
+| `Inserted` 字段 | `Base.1.0.ActionParameterUnknown`，HTTP 400 | 华为不接受该字段，只传 `Image`/`TransferProtocolType` |
+| 202 假成功 | Task 卡 Running，实际没挂上 | 轮询回读 `Inserted` 确认 |
+| NFS 路径 | 填了挂载点 `/mnt/iso/x.iso` | 必须是服务器绝对路径 |
+| BMC 到跳板机不通 | 抓包零 SYN | 镜像服务器必须与 BMC 同网段 |
+
+### 装机实测流程（100.88.20.20）
+
+```bash
+# 1. 挂 ISO + 设光驱启动 + 重启
+bmc_boot.py -f bmc20.txt \
+  --iso nfs://100.88.20.253/export/nfs-server-data/iso/xxx.iso --reset
+
+# 2. 约 60 秒后进入安装界面（BMC 侧 PowerState 保持 On）
+# 3. 装完后清理
+bmc_boot.py -f bmc20.txt --clear --eject
+```
+
+`Once` 模式启动一次后自动失效，`Boot` 会变回 `None/Disabled`。
 
 ## 相关脚本
 
