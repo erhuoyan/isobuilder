@@ -59,16 +59,24 @@ def sample(nfs_host, ssh_opts):
     out = {}
     cur_ip = None
     for line in r.stdout.splitlines():
-        # 连接行: 100.88.20.253:2049  100.88.20.15:749
-        m = re.search(r"100\.88\.\d+\.\d+:2049\s+(100\.88\.\d+\.\d+):", line)
-        if m:
-            cur_ip = m.group(1)
+        # 连接行形如: "0  0  本地:2049  对端:端口"（前两列是 Recv-Q/Send-Q）
+        peer = None
+        fields = line.split()
+        for i, f in enumerate(fields):
+            if f.endswith(":2049") and i + 1 < len(fields):
+                peer = fields[i + 1].rsplit(":", 1)[0].strip("[]")
+                break
+
+        if peer:
+            cur_ip = peer
             continue
-        # 紧随其后的详细行里有 bytes_sent
+
+        # 紧随连接行的详细统计里有 bytes_sent。
+        # 同一 IP 可能有多条并发连接，累加而不是覆盖。
         if cur_ip:
             bm = re.search(r"bytes_sent:(\d+)", line)
             if bm:
-                out[cur_ip] = int(bm.group(1))
+                out[cur_ip] = out.get(cur_ip, 0) + int(bm.group(1))
                 cur_ip = None
     return out
 
