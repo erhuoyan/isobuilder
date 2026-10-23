@@ -452,6 +452,8 @@ def main():
             "",
             "电源操作:",
             "  --reset        设置后立即重启（默认 ForceRestart）",
+            "                 单独使用 --reset = 只重启，不改引导",
+            "                 （BIOS pending 生效、重装系统等场景）",
             "  --reset-type   指定重启方式，可选:",
             "                 On / ForceOff / GracefulShutdown / ForceRestart /",
             "                 ForcePowerCycle / PowerCycle / Nmi",
@@ -473,6 +475,8 @@ def main():
             "  bmc_boot.py -f bmcinfo.txt -t cd --iso https://h/a.iso --reset",
             "  bmc_boot.py -f bmcinfo.txt --eject                     # 弹盘",
             "  bmc_boot.py -f bmcinfo.txt --clear                     # 清除重定向",
+            "  bmc_boot.py -f bmcinfo.txt --reset                     # 仅重启",
+            "  bmc_boot.py -f bmcinfo.txt --reset --dry-run           # 预演重启",
             "",
             "注意: --reset 会真实重启服务器，先在单台验证再用 -f 批量。",
             "",
@@ -526,9 +530,11 @@ def main():
     # 清除重定向时 Enabled 必须是 Disabled，否则会留下 None/Once 这种脏状态
     mode = "Disabled" if target == "None" else args.mode
 
-    if not any([args.status, args.eject, args.iso, target]):
-        print("错误: 需要指定动作：-t TARGET / --status / --eject / --clear / --iso URL",
-              file=sys.stderr)
+    # --reset 单独使用 = 只重启，不改引导（例：让 BIOS pending 生效）
+    reset_only = args.reset and not any([args.iso, args.eject, target])
+    if not any([args.status, args.eject, args.iso, target, args.reset]):
+        print("错误: 需要指定动作：-t TARGET / --status / --eject / --clear / "
+              "--iso URL / --reset", file=sys.stderr)
         sys.exit(1)
 
     # 提前校验 ISO URL，避免批量跑完才发现统统格式错误
@@ -558,6 +564,7 @@ def main():
         "status": args.status,
         "dry_run": args.dry_run,
         "wait": args.wait,
+        "reset_only": reset_only,
     }
 
     output = args.output
