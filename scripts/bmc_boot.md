@@ -257,6 +257,7 @@ ssh root@内网机 'dpkg -i /tmp/nfsdeb/*.deb'
 | 重复挂载同一 ISO | ✅ 跳过重挂，1.4s（首次 8.5s） |
 | 挂载不存在的文件 | ✅ 正确 `FAIL` 并报错（旧版会假报成功） |
 | `--reset` 真实重启 + 从 ISO 引导 | ✅ 进入安装程序 |
+| **ISO 挂着 + `Boot=None/Disabled` 开机** | ✅ 从硬盘启动，进新系统，未误引导 |
 
 ### 实测踩到的坑
 
@@ -280,6 +281,29 @@ bmc_boot.py -f bmc20.txt --clear --eject
 ```
 
 `Once` 模式启动一次后自动失效，`Boot` 会变回 `None/Disabled`。
+
+## 常见疑问：ISO 没弹会不会又从光盘启动
+
+**不会。** 实测验证（100.88.20.20）：
+
+```
+条件:  Boot=None/Disabled + Inserted=True（ISO 仍挂载）
+动作:  开机
+结果:  PowerState=On，SSH 22 可连，正常进入新装系统
+```
+
+原因：
+
+| 机制 | 说明 |
+|---|---|
+| `BootSourceOverride` | 一次性重定向，用掉后 BMC 自动清空为 `None/Disabled` |
+| BIOS 启动顺序 | `BootTypeOrder0=HardDiskDrive`，硬盘优先于 `DVDROMDrive` |
+| 虚拟光驱 | 只是"盘在驱动器里"，不等于"从盘启动" |
+
+**仍然建议装机后 `--eject`**，原因只有两个：
+
+1. NFS 服务器不可达时，UEFI 探测虚拟光驱会引入超时（可能几十秒）
+2. 留着盘，以后谁误设 `-t cd` 就会又进安装程序
 
 ## 相关脚本
 
