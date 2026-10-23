@@ -1,0 +1,206 @@
+# bmc_boot.py — 批量控制启动设备
+
+通过 Redfish API 批量设置服务器**下一次**的启动设备（PXE / 虚拟光驱 / BIOS 设置界面），
+可选设置后立即重启。
+
+## 与 bmc_bios_set.py 的区别
+
+| | bmc_bios_set.py | bmc_boot.py |
+|---|---|---|
+| 操作对象 | BIOS 持久配置（`Bios/Settings`） | 一次性启动重定向（`Systems/1 Boot`） |
+| 生效时机 | **必须重启**后才生效 | 设置后**下次启动**即生效 |
+| 典型用途 | 关闭超线程、改启动顺序 | 装机引导、进 BIOS、挂 ISO |
+| 是否改变硬件配置 | 是（持久） | 否（`Once` 模式下次启动后自动清除） |
+
+装完机想恢复硬盘启动，用 `--clear` 即可，不会残留配置。
+
+## 参数
+
+| 参数 | 说明 |
+|---|---|
+| `-f, --file` | 必填。BMC 信息文件路径 |
+| `-t, --target` | 启动目标：`pxe` / `cd` / `iso` / `hdd` / `bios` / `none` |
+| `-m, --mode` | `Once`（默认，只生效一次）/ `Continuous`（持续生效） |
+| `--reset` | 设置后立即重启 |
+| `--reset-type` | 重启方式，默认 `ForceRestart` |
+| `--iso URL` | 插入虚拟光驱 ISO，自动应用 `-t cd` |
+| `--eject` | 弹出已挂载的镜像 |
+| `--vm-user` / `--vm-pass` | 镜像服务器认证（可选） |
+| `--status` | 只查询电源状态和当前引导源 |
+| `--clear` | 清除引导重定向（= `-t none`，同时置 `Disabled`） |
+| `--dry-run` | 只读不写 |
+| `-u, --user` | BMC 用户名（默认 `jdroot`） |
+| `-p, --password` | BMC 密码（默认 `JCss%6!8`） |
+| `-o, --output` | 输出 CSV 路径（默认 `bmc_boot_<时间戳>.csv`） |
+| `-j, --jobs` | 并发数（默认 10） |
+
+## 启动目标
+
+| `-t` | Redfish 值 | 效果 |
+|---|---|---|
+| `pxe` | `Pxe` | 从网卡 PXE 启动（装机常用） |
+| `cd` / `iso` | `Cd` | 从虚拟光驱启动（配合 `--iso`） |
+| `hdd` | `Hdd` | 从硬盘启动 |
+| `bios` | `BiosSetup` | 重启进入 BIOS 设置界面 |
+| `none` | `None` | 清除重定向，恢复正常启动顺序 |
+
+## 重启方式
+
+`--reset-type` 可选值（华为 iBMC3 实测支持）：
+
+| 值 | 说明 |
+|---|---|
+| `ForceRestart` | 强制重启（默认，最快） |
+| `GracefulRestart` | 优雅重启（通知 OS 关机） |
+| `PowerCycle` | 断电重启 |
+| `ForcePowerCycle` | 强制断电重启 |
+| `On` | 开机 |
+| `ForceOff` | 强制关机 |
+| `GracefulShutdown` | 优雅关机 |
+| `Nmi` | 触发 NMI |
+
+**电源为 `Off` 时**，`ForceRestart` / `PowerCycle` 会无效，脚本自动改用 `On` 开机，
+不报错。
+
+## 用法示例
+
+```bash
+# 0. 先看当前状态（永远从这步开始）
+python3 scripts/bmc_boot.py -f bmcinfo.txt --status
+
+# 1. 下次启动走 PXE（不重启，最安全）
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe
+
+# 2. 设置并立即重启
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe --reset
+
+# 3. 挂 ISO 并从光驱启动
+python3 scripts/bmc_boot.py -f bmcinfo.txt \
+    --iso https://files.example.com/rocky9.iso --reset
+
+# 4. 重启进入 BIOS 设置界面
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t bios --reset
+
+# 5. 装机完成后恢复硬盘启动
+python3 scripts/bmc_boot.py -f bmcinfo.txt --clear
+python3 scripts/bmc_boot.py -f bmcinfo.txt --eject      # 顺带弹出 ISO
+
+# 6. 预演（不写任何东西）
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe --reset --dry-run
+
+# 7. 持续从 PXE 启动（调试网络装机时用，避免每次重启都要重设）
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe -m Continuous --reset
+```
+
+## 典型装机流程
+
+```bash
+# ① 确认当前状态
+bmc_boot.py -f bmcinfo.txt --status
+
+# ② 挂载装机 ISO + 设为下次光驱启动 + 重启
+bmc_boot.py -f bmcinfo.txt --iso https://.../installer.iso --reset
+
+# ③ 等装机完成（略）
+
+# ④ 装完后清理，恢复硬盘启动
+bmc_boot.py -f bmcinfo.txt --clear --eject
+```
+
+`Once` 模式下，服务器从光驱启动一次后会自动回到正常启动顺序，
+所以 ④ 的 `--clear` 主要是为了**弹出 ISO**，防止下次误引导。
+
+## 输出
+
+```
+动作: 引导=Pxe/Once + 重启(ForceRestart)
+共 3 台, 并发: 10
+──────────────────────────────────────────────────────────────
+  [1/3] 100.88.20.1 SN=2102315UENN0S5100200 电源=On 引导=None/Disabled → Pxe/Once [OK(已设置并重启:ForceRestart)]
+  [2/3] 100.88.20.2 SN=2102315UENN0S5100203 电源=On 引导=Pxe/Once [SKIP(状态一致)]
+  [3/3] 100.88.20.3 SN=2102315UENN0S5100191 电源=Off 引导=None/Disabled [OK] [FAIL]
+──────────────────────────────────────────────────────────────
+完成: 成功 1, 跳过 1, 失败 1, 共 3
+  ⚠ 1 台已下发重启，机器会立即重启
+```
+
+### 状态含义
+
+| 状态 | 含义 |
+|---|---|
+| `OK` | 查询成功（`--status` 模式） |
+| `OK(已设置)` | 引导重定向已设置，**未重启** |
+| `OK(已设置并重启:ForceRestart)` | 已设置并下发重启 |
+| `OK(已重启:ForceRestart)` | 重定向状态本来就一致，只执行了重启 |
+| `OK(已弹出)` | 虚拟光驱已弹出 |
+| `SKIP(状态一致)` | 目标状态与当前一致，未做修改 |
+| `DRY_RUN` | 预演，未执行 |
+| `FAIL` | 连接失败或 API 拒绝 |
+
+### CSV 列
+
+```csv
+bmc_ip,sn,power_before,target_before,target_after,status,error
+100.88.20.1,2102315UENN0S5100200,On,None/Disabled,Pxe/Once,OK(已设置并重启:ForceRestart),
+```
+
+`target` 格式为 `<目标>/<模式>`，如 `Pxe/Once`、`None/Disabled`。
+
+## 安全须知
+
+**`--reset` 会真实重启服务器。** 先在单台验证，再对整批执行：
+
+```bash
+# 单台验证
+echo 100.88.20.1 > /tmp/one.txt
+python3 scripts/bmc_boot.py -f /tmp/one.txt -t pxe --reset
+
+# 确认无误再批量
+python3 scripts/bmc_boot.py -f bmcinfo.txt -t pxe --reset -j 20
+```
+
+不带 `--reset` 时**只设置下次启动设备，不会重启**，可以放心在生产环境预置。
+
+## 华为 BMC 的特殊处理
+
+与 `bmc_bios_set.py` 相同：`PATCH /redfish/v1/Systems/1` 强制要求 `If-Match`，
+不带会返回 `HTTP 412 Precondition Failed`。脚本自动取 ETag 并在 412 时重试。
+
+## 虚拟光驱
+
+`--iso` 支持三种协议，从 URL 前缀自动推断：
+
+| URL 前缀 | TransferProtocolType |
+|---|---|
+| `https://` | `HTTPS` |
+| `cifs://` 或 `smb://` | `CIFS` |
+| `nfs://` | `NFS` |
+
+镜像需要 BMC 能直接访问（BMC 自己发起下载，不是你本机）。若镜像服务器要认证，
+用 `--vm-user` / `--vm-pass`。
+
+> 镜像 URL 需能被 BMC 网段访问到。走 NAT/跳板机的路径不适用于这一步。
+
+## 验证记录
+
+已在华为 iBMC3（Kunpeng 920 / J353 G3）实测：
+
+| 场景 | 结果 |
+|---|---|
+| `--status` 查询 | ✅ |
+| `-t pxe` 设置（不重启） | ✅ 独立 curl 验证 `Pxe/Once` |
+| 重复设置同一目标 | ✅ `SKIP(状态一致)` |
+| `--clear` | ✅ 置为 `None/Disabled` |
+| `--eject`（空光驱） | ✅ |
+| `--dry-run` | ✅ 不写任何东西 |
+| `--reset` 真实重启 | ⚠️ 未实测（会重启生产机器），API 与 ResetType 已确认可用 |
+| `--iso` 真实插入 | ⚠️ 未实测（需真实可访问的镜像 URL） |
+
+## 相关脚本
+
+| 脚本 | 用途 |
+|---|---|
+| `bmc_inventory.py` | 采集硬件信息（SN/MAC/网卡），只读 |
+| `bmc_bios_set.py` | 查询/修改 BIOS 持久配置 |
+| `bmc_boot.py` | 控制启动设备 + 电源操作 |
+| `test_redfish_fields.sh` | 对比标准字段与 OEM 字段是否有值 |
