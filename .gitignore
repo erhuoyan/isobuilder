@@ -11,3 +11,6 @@ release/
 
 # 本地测试用的真实配置（含数据库密码），只提交 .example 模板
 config.local.yaml
+
+# sshuttle -D 模式在当前目录留下的 pid 文件（仅本机调试用）
+sshuttle.pid
