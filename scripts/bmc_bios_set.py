@@ -134,37 +134,39 @@ def process_one(ip, user, passwd, attrs, dry_run=False):
         if sys_data:
             result["sn"] = sys_data.get("SerialNumber", "")
 
-    current_attrs = bios_data.get("Attributes", {}) or {}
+    effective = bios_data.get("Attributes", {}) or {}
 
-    # 记录每个属性的前后值
+    # 2) 读 pending（同时拿 ETag，华为 BMC 强制 If-Match）。
+    #    只看生效值会让重启前的重复执行反复写同一个 pending，这里一并检查。
+    settings_data, etag = redfish_get_with_etag(ip, user, passwd, BIOS_SETTINGS_PATH)
+    pending = (settings_data or {}).get("Attributes") or {}
+
     need_change = {}
+    already_effective = True
     for key, target_val in attrs.items():
-        current_val = current_attrs.get(key, "<未找到>")
-        result[f"{key}_before"] = str(current_val)
-        result[f"{key}_after"] = ""
+        eff_val = effective.get(key, "<未找到>")
+        pend_val = pending.get(key)
+        result[f"{key}_before"] = str(eff_val)
 
-        if str(current_val) == str(target_val):
-            result[f"{key}_after"] = str(current_val)  # 已经是目标值
+        if str(eff_val) == str(target_val):
+            result[f"{key}_after"] = str(eff_val)
+        elif pend_val is not None and str(pend_val) == str(target_val):
+            result[f"{key}_after"] = f"{target_val}(已pending)"
+            already_effective = False
         else:
             need_change[key] = target_val
+            result[f"{key}_after"] = str(eff_val)
+            already_effective = False
 
     if not need_change:
-        result["status"] = "SKIP"
-        for key in attrs:
-            result[f"{key}_after"] = result[f"{key}_before"]
+        result["status"] = "SKIP(已生效)" if already_effective else "SKIP(已pending)"
         return result
 
     if dry_run:
         result["status"] = "DRY_RUN"
         for key, val in need_change.items():
             result[f"{key}_after"] = f"→{val}(未执行)"
-        for key in attrs:
-            if key not in need_change:
-                result[f"{key}_after"] = result[f"{key}_before"]
         return result
-
-    # 2) GET Settings 端点拿 ETag
-    _, etag = redfish_get_with_etag(ip, user, passwd, BIOS_SETTINGS_PATH)
 
     # 3) PATCH 写入 pending settings
     payload = {"Attributes": need_change}
@@ -174,18 +176,55 @@ def process_one(ip, user, passwd, attrs, dry_run=False):
         result["status"] = "OK(重启生效)"
         for key, val in need_change.items():
             result[f"{key}_after"] = f"{val}(pending)"
-        for key in attrs:
-            if key not in need_change:
-                result[f"{key}_after"] = result[f"{key}_before"]
     else:
         result["status"] = "FAIL"
-        err_msg = ""
-        if body:
-            err_msg = json.dumps(body, ensure_ascii=False)[:200]
+        err_msg = json.dumps(body, ensure_ascii=False)[:200] if body else ""
         result["error"] = f"HTTP {code}: {err_msg}"
-        for key in attrs:
+        for key in need_change:
             result[f"{key}_after"] = result[f"{key}_before"]
 
+    return result
+
+
+def query_one(ip, user, passwd, keys):
+    """
+    查询一台服务器的 BIOS 属性。
+
+    keys 为 None 表示列出全部。返回:
+      bmc_ip, sn, status, error, attrs: {key: {"effective": v, "pending": v}}
+    """
+    result = {"bmc_ip": ip, "sn": "", "status": "", "error": "", "attrs": {}}
+
+    bios_data, _ = redfish_get(ip, user, passwd, BIOS_PATH)
+    if not bios_data:
+        result["status"] = "FAIL"
+        result["error"] = "无法连接BMC"
+        return result
+
+    result["sn"] = bios_data.get("SerialNumber", "") or ""
+    if not result["sn"]:
+        sys_data, _ = redfish_get(ip, user, passwd, "/redfish/v1/Systems/1")
+        if sys_data:
+            result["sn"] = sys_data.get("SerialNumber", "")
+
+    effective = bios_data.get("Attributes", {}) or {}
+    settings_data, _ = redfish_get(ip, user, passwd, BIOS_SETTINGS_PATH)
+    pending = (settings_data or {}).get("Attributes") or {}
+
+    if keys:
+        for k in keys:
+            result["attrs"][k] = {
+                "effective": effective.get(k),
+                "pending": pending.get(k),
+            }
+    else:
+        for k in sorted(effective):
+            result["attrs"][k] = {
+                "effective": effective[k],
+                "pending": pending.get(k),
+            }
+
+    result["status"] = "OK"
     return result
 
 
@@ -248,35 +287,40 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="\n".join([
             "",
-            "属性通过 -s KEY=VALUE 指定，可重复多次:",
-            "  -s SMT2En=Disabled          关闭超线程",
-            "  -s BootTypeOrder=UEFI       设置启动类型",
-            "  -s SMT2En=Disabled -s XX=YY 同时设置多个",
+            "三种模式:",
+            "  修改  -s KEY=VALUE   写入 pending settings（重启后生效）",
+            "  查询  -g KEY         查指定属性的生效值 + pending 值",
+            "  列出  --list         列出全部属性（约 400 项）",
             "",
-            "查看可用属性名和当前值:",
-            "  curl -sk -u user:pass https://<BMC>/redfish/v1/Systems/1/Bios \\",
-            "    | python3 -c \"import sys,json; [print(f'{k}: {v}')\"\\",
-            "      \"for k,v in sorted(json.load(sys.stdin).get('Attributes',{}).items())]\"",
+            "修改示例:",
+            "  -s SMT2En=Disabled          关闭超线程",
+            "  -s SMT2En=Disabled -s XX=YY 同时设置多个",
             "",
            f"默认账号: {DEFAULT_USER} / {DEFAULT_PASS}",
             "",
             "示例:",
-            "  bmc_bios_set.py -f bmcinfo.txt -s SMT2En=Disabled",
+            "  bmc_bios_set.py -f bmcinfo.txt -g SMT2En          # 查询",
+            "  bmc_bios_set.py -f bmcinfo.txt --list             # 列出全部属性",
+            "  bmc_bios_set.py -f bmcinfo.txt -s SMT2En=Disabled # 修改",
             "  bmc_bios_set.py -f bmcinfo.txt -s SMT2En=Disabled --dry-run",
             "  bmc_bios_set.py -f ip_list.txt -s SMT2En=Disabled -o result.csv -j 20",
             "",
             "注意: 修改写入 pending settings，需要重启服务器才生效。",
-            "      已经是目标值的机器会 SKIP，不做任何写入。",
+            "      已生效或已 pending 的机器会 SKIP，不重复写入。",
             "",
         ]),
     )
     parser.add_argument("-f", "--file", required=True, metavar="FILE",
                         help="BMC 信息文件 (CSV / TSV / 空格分隔 / 纯 IP 列表)")
-    parser.add_argument("-s", "--set", required=True, action="append", metavar="KEY=VALUE",
+    parser.add_argument("-s", "--set", action="append", metavar="KEY=VALUE",
                         dest="settings",
                         help="BIOS 属性 KEY=VALUE，可多次指定")
+    parser.add_argument("-g", "--get", action="append", metavar="KEY", dest="get_keys",
+                        help="查询指定 BIOS 属性的当前值（可多次指定，不修改）")
+    parser.add_argument("--list", action="store_true",
+                        help="列出全部 BIOS 属性及当前值（不修改）")
     parser.add_argument("--dry-run", action="store_true",
-                        help="只读取当前值，不实际修改")
+                        help="配合 -s 使用：只读取当前值，不实际修改")
     parser.add_argument("-u", "--user", default=None, metavar="USER",
                         help="全局 BMC 用户名 (默认: %s)" % DEFAULT_USER)
     parser.add_argument("-p", "--password", default=None, metavar="PASS",
@@ -288,18 +332,24 @@ def main():
 
     args = parser.parse_args()
 
+    # 查询模式与修改模式互斥
+    query_mode = bool(args.get_keys) or args.list
+    if query_mode and args.settings:
+        print("错误: 查询模式（-g/--list）不能与 -s 同时使用", file=sys.stderr)
+        sys.exit(1)
+    if not query_mode and not args.settings:
+        print("错误: 需要 -s KEY=VALUE（修改）、-g KEY（查询）或 --list（列出全部）",
+              file=sys.stderr)
+        sys.exit(1)
+
     # 解析 KEY=VALUE
     attrs = {}
-    for s in args.settings:
+    for s in (args.settings or []):
         if "=" not in s:
             print(f"错误: '{s}' 格式不对，应为 KEY=VALUE", file=sys.stderr)
             sys.exit(1)
         k, v = s.split("=", 1)
         attrs[k.strip()] = v.strip()
-
-    if not attrs:
-        print("错误: 至少指定一个 -s KEY=VALUE", file=sys.stderr)
-        sys.exit(1)
 
     output = args.output
     if not output:
@@ -323,6 +373,69 @@ def main():
             h["pass"] = effective_pass
 
     total = len(hosts)
+
+    # ── 查询模式 ─────────────────────────────────────────────────────────
+    if query_mode:
+        label = "全部属性" if args.list else ", ".join(args.get_keys)
+        print(f"查询: {label}, 共 {total} 台, 并发: {args.jobs}", file=sys.stderr)
+        print(f"{'─' * 60}", file=sys.stderr)
+
+        qresults = []
+        done = 0
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            futures = {
+                pool.submit(query_one, h["ip"], h["user"], h["pass"],
+                            None if args.list else args.get_keys): h
+                for h in hosts
+            }
+            for future in as_completed(futures):
+                done += 1
+                r = future.result()
+                qresults.append(r)
+                if r["error"]:
+                    print(f"  [{done}/{total}] {r['bmc_ip']} FAIL: {r['error']}",
+                          file=sys.stderr)
+                else:
+                    items = "; ".join(
+                        f"{k}={v['effective']}"
+                        + (f"(pending:{v['pending']})" if v["pending"] is not None else "")
+                        for k, v in r["attrs"].items()
+                    )
+                    print(f"  [{done}/{total}] {r['bmc_ip']} SN={r['sn']} {items}",
+                          file=sys.stderr)
+
+        qresults.sort(key=lambda x: list(map(int, x["bmc_ip"].split("."))))
+
+        # 列：bmc_ip, sn + 每个查询键的 effective/pending
+        col_keys = args.get_keys if args.get_keys else sorted(
+            {k for r in qresults for k in r["attrs"]}
+        )
+        header = ["bmc_ip", "sn"]
+        for k in col_keys:
+            header += [k, f"{k}_pending"]
+        header.append("error")
+
+        with open(output, "w", newline="", encoding="utf-8") as out_fh:
+            writer = csv.writer(out_fh)
+            writer.writerow(header)
+            for r in qresults:
+                row = [r["bmc_ip"], r["sn"]]
+                for k in col_keys:
+                    a = r["attrs"].get(k) or {}
+                    eff = a.get("effective")
+                    pend = a.get("pending")
+                    row += ["" if eff is None else eff,
+                            "" if pend is None else pend]
+                row.append(r["error"])
+                writer.writerow(row)
+
+        fail = sum(1 for r in qresults if r["error"])
+        print(f"{'─' * 60}", file=sys.stderr)
+        print(f"完成: 成功 {total - fail}, 失败 {fail}, 共 {total}", file=sys.stderr)
+        print(f"结果已保存到: {output}", file=sys.stderr)
+        return
+
+    # ── 修改模式 ─────────────────────────────────────────────────────────
     mode = "DRY RUN（不修改）" if args.dry_run else "执行修改"
     attr_str = ", ".join(f"{k}={v}" for k, v in attrs.items())
     print(f"目标: {attr_str}", file=sys.stderr)
@@ -374,14 +487,17 @@ def main():
             row += [r["status"], r["error"]]
             writer.writerow(row)
 
-    ok = sum(1 for r in results if r["status"] in ("OK(重启生效)", "SKIP"))
-    skip = sum(1 for r in results if r["status"] == "SKIP")
+    changed = sum(1 for r in results if r["status"] == "OK(重启生效)")
+    skip_eff = sum(1 for r in results if r["status"] == "SKIP(已生效)")
+    skip_pend = sum(1 for r in results if r["status"] == "SKIP(已pending)")
+    dry = sum(1 for r in results if r["status"] == "DRY_RUN")
     fail = sum(1 for r in results if r["status"] == "FAIL")
     print(f"{'─' * 60}", file=sys.stderr)
-    print(f"完成: 成功 {ok - skip}, 跳过 {skip}, 失败 {fail}, 共 {total}", file=sys.stderr)
-    if skip:
-        print(f"  跳过 = 已经是目标值，无需修改", file=sys.stderr)
-    if ok - skip > 0 and not args.dry_run:
+    print(f"完成: 写入 {changed}, 已生效跳过 {skip_eff}, 已pending跳过 {skip_pend}, "
+          f"失败 {fail}, 共 {total}", file=sys.stderr)
+    if dry:
+        print(f"  DRY RUN: {dry} 台待修改（未写入）", file=sys.stderr)
+    if changed:
         print(f"  ⚠ 修改已写入 pending，需要重启服务器才生效", file=sys.stderr)
     print(f"结果已保存到: {output}", file=sys.stderr)
 
