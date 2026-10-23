@@ -209,9 +209,9 @@ def main():
             "  优先级: 文件中的 > -u/-p > 内置默认值",
             "",
             "示例:",
-            "  redfish_collect.py -f bmcinfo.txt",
-            "  redfish_collect.py -f bmcinfo.txt -o result.csv",
-            "  redfish_collect.py -f ip_list.txt -u admin -p pass123 -j 20",
+            "  bmc_inventory.py -f bmcinfo.txt",
+            "  bmc_inventory.py -f bmcinfo.txt -o result.csv",
+            "  bmc_inventory.py -f ip_list.txt -u admin -p pass123 -j 20",
             "",
         ]),
     )
@@ -222,7 +222,7 @@ def main():
     parser.add_argument("-p", "--password", default=None, metavar="PASS",
                         help="全局 BMC 密码 (默认: %s)" % DEFAULT_PASS.replace("%", "%%"))
     parser.add_argument("-o", "--output", default=None, metavar="CSV",
-                        help="输出 CSV 路径 (默认: redfish_<日期时间>.csv)")
+                        help="输出 CSV 路径 (默认: bmc_inventory_<日期时间>.csv)")
     parser.add_argument("-j", "--jobs", type=int, default=10, metavar="N",
                         help="并发数 (默认: 10)")
 
@@ -233,7 +233,7 @@ def main():
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         output = os.path.join(
             os.path.dirname(os.path.abspath(args.file)),
-            f"redfish_{ts}.csv",
+            f"bmc_inventory_{ts}.csv",
         )
 
     hosts = load_bmcinfo(args.file)
