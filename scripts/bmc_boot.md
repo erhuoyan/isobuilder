@@ -26,7 +26,9 @@
 | `--iso URL` | 插入虚拟光驱 ISO，自动应用 `-t cd` |
 | `--eject` | 弹出已挂载的镜像 |
 | `--vm-user` / `--vm-pass` | 镜像服务器认证（可选） |
-| `--status` | 只查询电源状态和当前引导源 |
+| `--vnc on\|off` | 开启/关闭 VNC 远程画面 |
+| `--vnc-pass PASS` | VNC 密码（**最多 8 位**），配合 `--vnc on` |
+| `--status` | 只查询电源状态、当前引导源和 VNC 状态 |
 | `--clear` | 清除引导重定向（= `-t none`，同时置 `Disabled`） |
 | `--dry-run` | 只读不写 |
 | `--wait SEC` | 等待 ISO 挂载/弹出生效的超时（默认 90 秒） |
@@ -34,6 +36,57 @@
 | `-p, --password` | BMC 密码（默认 `JCss%6!8`） |
 | `-o, --output` | 输出 CSV 路径（默认 `bmc_boot_<时间戳>.csv`） |
 | `-j, --jobs` | 并发数（默认 10） |
+
+## VNC 远程画面
+
+装机需要看界面时开 VNC，比 KVM 网页好用在可以多标签、可脚本化。
+
+```bash
+# 开启并设密码
+python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc on --vnc-pass 'JCss%6!8'
+
+# 查状态（--status 输出里带 VNC=on/off）
+python3 scripts/bmc_boot.py -f bmcinfo.txt --status
+
+# 关闭
+python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc off
+```
+
+连接方式：
+
+```bash
+brew install tiger-vnc            # 或任意 VNC 客户端
+vncviewer 100.88.20.2             # 端口默认 5900
+```
+
+### 两个坑
+
+**① 开关不在 `VncService`**
+
+华为把 VNC 开关放在 `NetworkProtocol` 的 OEM 段，标准 `RFB` 字段是只读的：
+
+```bash
+# ✗ 报 PropertyNotWritable
+PATCH /redfish/v1/Managers/1/NetworkProtocol  {"RFB":{"ProtocolEnabled":true}}
+
+# ✓ 正确
+PATCH /redfish/v1/Managers/1/NetworkProtocol
+{"Oem":{"JD":{"VNC":{"ProtocolEnabled":true}}}}
+```
+
+**② 密码最长 8 位**
+
+超过报 `iBMC.1.0.StringValueTooLong`。默认 BMC 密码 `JCss%6!8` 正好 8 位，可直接复用。
+
+### 实测
+
+| 检查项 | 结果 |
+|---|---|
+| 开启 VNC | ✅ `Oem.JD.VNC.ProtocolEnabled=true` |
+| TLS 握手 | ✅ TLSv1.3（`SSLEncryptionEnabled: true`） |
+| 认证类型 | ✅ `[2]` = VNC Auth（需密码） |
+| 密码登录 | ✅ 完整 RFB 握手验证通过 |
+| 统一密码 | ✅ `JCss%6!8`（8 位）可用 |
 
 ## 启动目标
 
