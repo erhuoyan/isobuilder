@@ -14,3 +14,7 @@ config.local.yaml
 
 # sshuttle -D 模式在当前目录留下的 pid 文件（仅本机调试用）
 sshuttle.pid
+
+# Python 字节码缓存（scripts/*.py 运行时生成）
+__pycache__/
+*.pyc
