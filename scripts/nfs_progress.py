@@ -47,7 +47,10 @@ def sample(nfs_host, ssh_opts):
     try:
         r = subprocess.run(
             ["ssh", *ssh_opts, nfs_host, cmd],
-            capture_output=True, text=True, timeout=20,
+            # capture_output/text 是 Python 3.7 才有的参数：3.6 上会抛 TypeError，
+            # 报成“SSH 失败: unexpected keyword argument”。用 3.6 也认的写法。
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=20,
         )
     except Exception as e:
         print(f"SSH 失败: {e}", file=sys.stderr)

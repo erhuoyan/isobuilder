@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -24,48 +25,58 @@ DEFAULT_PASS = "JCss%6!8"
 #  Redfish 操作
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# 本线程最后一次请求的失败原因。并发用 ThreadPoolExecutor，不能用模块级全局变量。
+# 只影响报错文案，函数返回值保持原样。
+_err = threading.local()
+
+
+def _reason_suffix():
+    return ": " + _err.reason if getattr(_err, "reason", "") else ""
+
+
 def redfish_get(ip, user, passwd, path, timeout=15):
-    url = f"https://{ip}{path}"
-    try:
-        r = subprocess.run(
-            ["curl", "-sk", "-u", f"{user}:{passwd}", "--connect-timeout", "10",
-             "--max-time", str(timeout), url],
-            capture_output=True, text=True, timeout=timeout + 5,
-        )
-        if r.returncode != 0:
-            return None, None
-        # 提取 ETag（某些 BMC 强制要求 If-Match）
-        return json.loads(r.stdout), None
-    except Exception:
-        return None, None
+    """只要 body；要 ETag 时直接用 redfish_get_with_etag。"""
+    return redfish_get_with_etag(ip, user, passwd, path, timeout)
 
 
 def redfish_get_with_etag(ip, user, passwd, path, timeout=15):
-    """GET 同时拿响应头里的 ETag。"""
+    """GET 同时拿响应头里的 ETag。失败返回 (None, None)，原因记到本线程错误槽。"""
     url = f"https://{ip}{path}"
+    _err.reason = ""
     try:
         r = subprocess.run(
             ["curl", "-sk", "-u", f"{user}:{passwd}", "--connect-timeout", "10",
              "--max-time", str(timeout), "-D", "-", url],
-            capture_output=True, text=True, timeout=timeout + 5,
+            # capture_output/text 是 Python 3.7 才有的参数：3.6 上会抛 TypeError，
+            # 被下面的 except 吞掉后误报成“连不上 BMC”。用 3.6 也认的写法。
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=timeout + 5,
         )
-        if r.returncode != 0:
-            return None, None
-        # 分离 header 和 body（curl -D - 把 header 也写进 stdout）
-        parts = r.stdout.split("\r\n\r\n", 1)
-        if len(parts) < 2:
-            parts = r.stdout.split("\n\n", 1)
-        headers_raw = parts[0] if len(parts) == 2 else ""
-        body = parts[1] if len(parts) == 2 else r.stdout
+    except Exception as e:
+        _err.reason = "%s: %s" % (type(e).__name__, e)
+        return None, None
+    if r.returncode != 0:
+        err = (r.stderr or "").strip()[:200]
+        _err.reason = "curl exit %d: %s" % (r.returncode, err) if err else \
+            "curl exit %d" % r.returncode
+        return None, None
+    # 分离 header 和 body（curl -D - 把 header 也写进 stdout）
+    parts = r.stdout.split("\r\n\r\n", 1)
+    if len(parts) < 2:
+        parts = r.stdout.split("\n\n", 1)
+    headers_raw = parts[0] if len(parts) == 2 else ""
+    body = parts[1] if len(parts) == 2 else r.stdout
 
-        etag = None
-        for line in headers_raw.splitlines():
-            if line.lower().startswith("etag:"):
-                etag = line.split(":", 1)[1].strip()
-                break
+    etag = None
+    for line in headers_raw.splitlines():
+        if line.lower().startswith("etag:"):
+            etag = line.split(":", 1)[1].strip()
+            break
 
+    try:
         return json.loads(body), etag
     except Exception:
+        _err.reason = "响应不是合法 JSON: %s" % body.strip()[:120]
         return None, None
 
 
@@ -83,7 +94,8 @@ def redfish_patch(ip, user, passwd, path, payload, etag=None, timeout=15):
     cmd += ["-d", json.dumps(payload), url]
 
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, timeout=timeout + 5)
         output = r.stdout
         # 提取 HTTP 状态码
         http_code = 0
@@ -124,7 +136,7 @@ def process_one(ip, user, passwd, attrs, dry_run=False):
     bios_data, _ = redfish_get(ip, user, passwd, BIOS_PATH)
     if not bios_data:
         result["status"] = "FAIL"
-        result["error"] = "无法连接BMC"
+        result["error"] = "无法连接BMC" + _reason_suffix()
         return result
 
     result["sn"] = bios_data.get("SerialNumber", "") or ""
@@ -198,7 +210,7 @@ def query_one(ip, user, passwd, keys):
     bios_data, _ = redfish_get(ip, user, passwd, BIOS_PATH)
     if not bios_data:
         result["status"] = "FAIL"
-        result["error"] = "无法连接BMC"
+        result["error"] = "无法连接BMC" + _reason_suffix()
         return result
 
     result["sn"] = bios_data.get("SerialNumber", "") or ""

@@ -24,6 +24,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -62,26 +63,49 @@ TARGET_MAP = {
 #  Redfish 基础操作
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# 本线程最后一次请求的失败原因。并发用 ThreadPoolExecutor，不能用模块级全局变量。
+# 只影响报错文案，函数返回值保持原样。
+_err = threading.local()
+
+
+def _reason_suffix():
+    return ": " + _err.reason if getattr(_err, "reason", "") else ""
+
+
 def _curl(args, timeout):
+    """执行 curl；返回 stdout，失败返回 None 并把原因记到本线程错误槽。"""
+    _err.reason = ""
     try:
         r = subprocess.run(
             ["curl", "-sk", "--connect-timeout", "10", "--max-time", str(timeout)] + args,
-            capture_output=True, text=True, timeout=timeout + 5,
+            # 用 3.6 也能跑的写法：capture_output/text 是 3.7 新增参数，
+            # 在 3.6 上会抛 TypeError 且被下面的 except 吞掉，误报“无法连接BMC”
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=timeout + 5,
         )
-        return r.stdout if r.returncode == 0 else None
-    except Exception:
+    except Exception as e:
+        _err.reason = "%s: %s" % (type(e).__name__, e)
         return None
+    if r.returncode != 0:
+        err = (r.stderr or "").strip()[:200]
+        _err.reason = "curl exit %d: %s" % (r.returncode, err) if err else \
+            "curl exit %d" % r.returncode
+        return None
+    return r.stdout
 
 
 def redfish_get(ip, user, passwd, path, timeout=15):
     """GET 返回 (body_dict, etag)。etag 来自响应头。"""
     out = _curl(["-u", f"{user}:{passwd}", "-D", "-", f"https://{ip}{path}"], timeout)
     if not out:
+        if not _err.reason:
+            _err.reason = "curl 无输出"
         return None, None
 
     sep = "\r\n\r\n" if "\r\n\r\n" in out else "\n\n"
     parts = out.split(sep, 1)
     if len(parts) != 2:
+        _err.reason = "响应缺少 HTTP 头/体分隔"
         return None, None
     headers, body = parts
 
@@ -94,6 +118,7 @@ def redfish_get(ip, user, passwd, path, timeout=15):
     try:
         return json.loads(body), etag
     except Exception:
+        _err.reason = "响应不是合法 JSON: %s" % body.strip()[:120]
         return None, None
 
 
@@ -224,7 +249,7 @@ def process_one(ip, user, passwd, opts):
     sysdata, etag = redfish_get(ip, user, passwd, SYSTEM_PATH)
     if not sysdata:
         r["status"] = "FAIL"
-        r["error"] = "无法连接BMC"
+        r["error"] = "无法连接BMC" + _reason_suffix()
         return r
 
     r["sn"] = sysdata.get("SerialNumber", "")

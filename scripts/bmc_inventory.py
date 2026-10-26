@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
@@ -25,18 +26,40 @@ DEFAULT_PASS = "JCss%6!8"
 #  Redfish 采集
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# 本线程最后一次请求的失败原因。并发用 ThreadPoolExecutor，不能用模块级全局变量。
+# 只影响报错文案，函数返回值保持原样。
+_err = threading.local()
+
+
+def _reason_suffix():
+    return ": " + _err.reason if getattr(_err, "reason", "") else ""
+
+
 def redfish_get(ip, user, passwd, path, timeout=15):
+    """GET 并解析 JSON；失败返回 None，原因记到本线程错误槽。"""
     url = f"https://{ip}{path}"
+    _err.reason = ""
     try:
         r = subprocess.run(
             ["curl", "-sk", "-u", f"{user}:{passwd}", "--connect-timeout", "10",
              "--max-time", str(timeout), url],
-            capture_output=True, text=True, timeout=timeout + 5,
+            # capture_output/text 是 Python 3.7 才有的参数：3.6 上会抛 TypeError，
+            # 被下面的 except 吞掉后误报成“连不上 BMC”。用 3.6 也认的写法。
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True, timeout=timeout + 5,
         )
-        if r.returncode != 0:
-            return None
+    except Exception as e:
+        _err.reason = "%s: %s" % (type(e).__name__, e)
+        return None
+    if r.returncode != 0:
+        err = (r.stderr or "").strip()[:200]
+        _err.reason = "curl exit %d: %s" % (r.returncode, err) if err else \
+            "curl exit %d" % r.returncode
+        return None
+    try:
         return json.loads(r.stdout)
     except Exception:
+        _err.reason = "响应不是合法 JSON: %s" % r.stdout.strip()[:120]
         return None
 
 
@@ -52,7 +75,7 @@ def collect_one(ip, user, passwd):
     # 1) SN
     sys_data = redfish_get(ip, user, passwd, "/redfish/v1/Systems/1")
     if not sys_data:
-        result["error"] = "无法连接BMC"
+        result["error"] = "无法连接BMC" + _reason_suffix()
         return result
     result["sn"] = sys_data.get("SerialNumber", "")
 
@@ -69,7 +92,7 @@ def collect_one(ip, user, passwd):
     # 3) 所有网络适配器
     adapters = redfish_get(ip, user, passwd, "/redfish/v1/Chassis/1/NetworkAdapters")
     if not adapters:
-        result["error"] = "无法获取网络适配器列表"
+        result["error"] = "无法获取网络适配器列表" + _reason_suffix()
         return result
 
     for member in adapters.get("Members", []):
