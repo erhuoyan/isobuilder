@@ -27,8 +27,9 @@
 | `--eject` | 弹出已挂载的镜像 |
 | `--vm-user` / `--vm-pass` | 镜像服务器认证（可选） |
 | `--vnc on\|off` | 开启/关闭 VNC 远程画面 |
+| `--vnc-ssl on\|off` | VNC 通道是否走 TLS（`off` = 明文 RFB） |
 | `--vnc-pass PASS` | VNC 密码（**最多 8 位**），配合 `--vnc on` |
-| `--status` | 只查询电源状态、当前引导源和 VNC 状态 |
+| `--status` | 只查询电源状态、当前引导源、VNC 与 SSL 状态 |
 | `--clear` | 清除引导重定向（= `-t none`，同时置 `Disabled`） |
 | `--dry-run` | 只读不写 |
 | `--wait SEC` | 等待 ISO 挂载/弹出生效的超时（默认 90 秒） |
@@ -45,11 +46,21 @@
 # 开启并设密码
 python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc on --vnc-pass 'JCss%6!8'
 
-# 查状态（--status 输出里带 VNC=on/off）
+# 查状态（--status 输出里带 VNC=on/off SSL=on/off）
 python3 scripts/bmc_boot.py -f bmcinfo.txt --status
 
 # 关闭
 python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc off
+```
+
+`--vnc-ssl` 可单独用，也可与 `--vnc` / `--vnc-pass` 组合（同一条 PATCH 下发）：
+
+```bash
+# 关掉 TLS，改成明文 RFB
+python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc-ssl off
+
+# 一次配齐：开 VNC + 关 TLS + 设密码
+python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc on --vnc-ssl off --vnc-pass 'pw123456'
 ```
 
 连接方式：
@@ -78,6 +89,20 @@ PATCH /redfish/v1/Managers/1/NetworkProtocol
 
 超过报 `iBMC.1.0.StringValueTooLong`。默认 BMC 密码 `JCss%6!8` 正好 8 位，可直接复用。
 
+### 关闭 TLS（`--vnc-ssl off`）
+
+`SSLEncryptionEnabled` 位于 `VncService`，**可写**，且必须带 `If-Match`（不带报 `412`）：
+
+```bash
+PATCH /redfish/v1/Managers/1/VncService
+{"SSLEncryptionEnabled": false}
+```
+
+- 立即生效，无需重启 BMC：5900 端口从"等 TLS ClientHello"变成直接吐 `RFB 003.008`。
+- 只去掉传输层加密，认证仍是 VNC Auth（安全类型 `[2]`），不是无密码开放。
+- 明文 RFB 的密码挑战是 DES，可被嗅探/离线爆破。仅在内网，或先 `ssh -L 5900:<BMC>:5900 user@跳板` 再连 `localhost:5900`。
+- `--vnc-ssl` 与引导/ISO/重启互斥（VNC 配置是独立动作），`--status` 会一并显示 `SSL=on/off`。
+
 ### 实测
 
 | 检查项 | 结果 |
@@ -87,6 +112,8 @@ PATCH /redfish/v1/Managers/1/NetworkProtocol
 | 认证类型 | ✅ `[2]` = VNC Auth（需密码） |
 | 密码登录 | ✅ 完整 RFB 握手验证通过 |
 | 统一密码 | ✅ `JCss%6!8`（8 位）可用 |
+| 关闭 TLS | ✅ `SSLEncryptionEnabled=false` 后明文 `RFB 003.008`，认证仍为 `[2]` |
+| 改回 TLS | ✅ 明文连接重新超时（需 TLS 握手） |
 
 ## 启动目标
 
@@ -194,11 +221,12 @@ bmc_boot.py -f bmcinfo.txt --clear --eject
 ### CSV 列
 
 ```csv
-bmc_ip,sn,power_before,target_before,target_after,status,error
-100.88.20.1,2102315UENN0S5100200,On,None/Disabled,Pxe/Once,OK(已设置并重启:ForceRestart),
+bmc_ip,sn,power_before,iso_before,target_before,target_after,vnc,vnc_ssl,status,error
+100.88.20.1,2102315UENN0S5100200,On,,None/Disabled,Pxe/Once,on,on,OK(已设置并重启:ForceRestart),
 ```
 
 `target` 格式为 `<目标>/<模式>`，如 `Pxe/Once`、`None/Disabled`。
+`vnc` / `vnc_ssl` 只在 `--status` 或对应动作（`--vnc` / `--vnc-ssl`）时填值（`on`/`off`），其他动作为空。
 
 ## 安全须知
 

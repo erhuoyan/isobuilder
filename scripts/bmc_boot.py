@@ -14,6 +14,7 @@
   bmc_boot.py -f bmcinfo.txt -t bios --reset    # 重启进 BIOS 设置界面
   bmc_boot.py -f bmcinfo.txt --status           # 只查电源状态和当前引导源
   bmc_boot.py -f bmcinfo.txt --clear            # 清除引导重定向
+  bmc_boot.py -f bmcinfo.txt --vnc-ssl off      # 关掉 VNC 的 TLS（改明文 RFB）
 """
 
 import argparse
@@ -38,8 +39,9 @@ VM_CD_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD"
 VM_INSERT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.InsertMedia"
 VM_EJECT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.EjectMedia"
 
-# VNC 开关在 NetworkProtocol 的 OEM 段（标准 RFB 字段只读），
-# 密码在 VncService（最长 8 位，超长报 StringValueTooLong）。
+# VNC 开关在 NetworkProtocol 的 OEM 段（标准 RFB 字段只读）；
+# 密码与 TLS 开关（SSLEncryptionEnabled）都在 VncService，
+# 密码最长 8 位，超长报 StringValueTooLong。
 NETPROTO_PATH = "/redfish/v1/Managers/1/NetworkProtocol"
 VNC_SERVICE_PATH = "/redfish/v1/Managers/1/VncService"
 VNC_PASSWORD_MAX = 8
@@ -216,7 +218,8 @@ def process_one(ip, user, passwd, opts):
     返回 dict: bmc_ip, sn, power_before, target_before, target_after, status, error
     """
     r = {"bmc_ip": ip, "sn": "", "power_before": "", "target_before": "",
-         "target_after": "", "iso_before": "", "vnc": "", "status": "", "error": ""}
+         "target_after": "", "iso_before": "", "vnc": "", "vnc_ssl": "",
+         "status": "", "error": ""}
 
     sysdata, etag = redfish_get(ip, user, passwd, SYSTEM_PATH)
     if not sysdata:
@@ -242,40 +245,52 @@ def process_one(ip, user, passwd, opts):
         net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
         vnc = (net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
         r["vnc"] = "on" if vnc.get("ProtocolEnabled") else "off"
+        svc, _ = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
+        if svc is not None:
+            r["vnc_ssl"] = "on" if svc.get("SSLEncryptionEnabled") else "off"
         r["status"] = "OK"
         return r
 
     vm_note = ""
 
-    # ── VNC 开关 / 改密码 ────────────────────────────────────────────────
-    if opts["vnc"]:
+    # ── VNC 开关 / SSL / 改密码 ──────────────────────────────────────────
+    if opts["vnc"] or opts["vnc_ssl"]:
         want_on = opts["vnc"] == "on"
+        want_ssl = opts["vnc_ssl"] == "on"
         if opts["dry_run"]:
-            r["vnc"] = "on" if want_on else "off"
+            if opts["vnc"]:
+                r["vnc"] = "on" if want_on else "off"
+            if opts["vnc_ssl"]:
+                r["vnc_ssl"] = "on" if want_ssl else "off"
             r["status"] = "DRY_RUN"
             r["target_after"] = r["target_before"]
             return r
 
+        notes = []
+
         # 开关：标准 RFB 字段只读，必须写 OEM 段
-        net, net_etag = redfish_get(ip, user, passwd, NETPROTO_PATH)
-        if net is None:
-            r["status"] = "FAIL"
-            r["error"] = "无法读取 NetworkProtocol"
-            return r
-        code, body = redfish_patch(
-            ip, user, passwd, NETPROTO_PATH,
-            {"Oem": {"JD": {"VNC": {"ProtocolEnabled": want_on}}}},
-            etag=net_etag,
-        )
-        if code != 200:
-            r["target_after"] = r["target_before"]
-            r["status"] = "FAIL"
-            r["error"] = f"VNC 开关 HTTP {code}: {_brief(body)}"
-            return r
+        if opts["vnc"]:
+            net, net_etag = redfish_get(ip, user, passwd, NETPROTO_PATH)
+            if net is None:
+                r["status"] = "FAIL"
+                r["error"] = "无法读取 NetworkProtocol"
+                return r
+            code, body = redfish_patch(
+                ip, user, passwd, NETPROTO_PATH,
+                {"Oem": {"JD": {"VNC": {"ProtocolEnabled": want_on}}}},
+                etag=net_etag,
+            )
+            if code != 200:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = f"VNC 开关 HTTP {code}: {_brief(body)}"
+                return r
+            notes.append("VNC开" if want_on else "VNC关")
 
-        notes = ["VNC开" if want_on else "VNC关"]
-
-        # 密码（可选，仅开启时有意义）
+        # SSL 与密码同属 VncService，合并成一次 PATCH
+        svc_payload = {}
+        if opts["vnc_ssl"]:
+            svc_payload["SSLEncryptionEnabled"] = want_ssl
         if opts["vnc_pass"]:
             if len(opts["vnc_pass"]) > VNC_PASSWORD_MAX:
                 r["target_after"] = r["target_before"]
@@ -283,29 +298,51 @@ def process_one(ip, user, passwd, opts):
                 r["error"] = (f"VNC 密码最多 {VNC_PASSWORD_MAX} 位"
                               f"（当前 {len(opts['vnc_pass'])} 位）")
                 return r
+            svc_payload["Password"] = opts["vnc_pass"]
+
+        if svc_payload:
             _, vnc_etag = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
             code, body = redfish_patch(
-                ip, user, passwd, VNC_SERVICE_PATH,
-                {"Password": opts["vnc_pass"]},
-                etag=vnc_etag,
+                ip, user, passwd, VNC_SERVICE_PATH, svc_payload, etag=vnc_etag,
             )
             if code != 200:
                 r["target_after"] = r["target_before"]
                 r["status"] = "FAIL"
-                r["error"] = f"VNC 密码 HTTP {code}: {_brief(body)}"
+                r["error"] = f"VNC 配置 HTTP {code}: {_brief(body)}"
                 return r
-            notes.append("密码已设")
+            if opts["vnc_ssl"]:
+                notes.append("SSL开" if want_ssl else "SSL关")
+            if opts["vnc_pass"]:
+                notes.append("密码已设")
 
         # 回读确认，避免 200 假成功
-        net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
-        actual = bool((net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
-                      .get("ProtocolEnabled"))
-        r["vnc"] = "on" if actual else "off"
-        if actual != want_on:
-            r["target_after"] = r["target_before"]
-            r["status"] = "FAIL"
-            r["error"] = f"VNC 写入后状态不符（期望 {'on' if want_on else 'off'}，实际 {r['vnc']}）"
-            return r
+        if opts["vnc"]:
+            net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
+            actual = bool((net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
+                          .get("ProtocolEnabled"))
+            r["vnc"] = "on" if actual else "off"
+            if actual != want_on:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = (f"VNC 写入后状态不符"
+                              f"（期望 {'on' if want_on else 'off'}，实际 {r['vnc']}）")
+                return r
+
+        if opts["vnc_ssl"]:
+            svc, _ = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
+            if svc is None:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = "VNC SSL 写入后无法回读 VncService"
+                return r
+            actual_ssl = bool(svc.get("SSLEncryptionEnabled"))
+            r["vnc_ssl"] = "on" if actual_ssl else "off"
+            if actual_ssl != want_ssl:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = (f"VNC SSL 写入后状态不符"
+                              f"（期望 {'on' if want_ssl else 'off'}，实际 {r['vnc_ssl']}）")
+                return r
 
         r["status"] = "OK(" + "+".join(notes) + ")"
         r["target_after"] = r["target_before"]
@@ -537,6 +574,11 @@ def main():
             "  --eject        弹出已挂载的镜像",
             "  --vm-user/--vm-pass  访问镜像所在的认证信息（可选）",
             "",
+            "VNC (独立动作，不能与引导/ISO/重启组合):",
+            "  --vnc on|off       开关远程画面",
+            "  --vnc-ssl on|off   通道是否 TLS 加密（off = 明文 RFB，默认 on）",
+            "  --vnc-pass PASS    VNC 密码，最多 8 位",
+            "",
            f"默认账号: {DEFAULT_USER} / {DEFAULT_PASS}",
             "",
             "示例:",
@@ -550,6 +592,8 @@ def main():
             "  bmc_boot.py -f bmcinfo.txt --clear                     # 清除重定向",
             "  bmc_boot.py -f bmcinfo.txt --reset                     # 仅重启",
             "  bmc_boot.py -f bmcinfo.txt --reset --dry-run           # 预演重启",
+            "  bmc_boot.py -f bmcinfo.txt --vnc on --vnc-pass 'pw123456'",
+            "  bmc_boot.py -f bmcinfo.txt --vnc-ssl off               # 关 TLS",
             "",
             "注意: --reset 会真实重启服务器，先在单台验证再用 -f 批量。",
             "",
@@ -570,6 +614,8 @@ def main():
     parser.add_argument("--vm-pass", metavar="PASS", help="镜像服务器密码 (可选)")
     parser.add_argument("--vnc", choices=["on", "off"], metavar="{on,off}",
                         help="开启/关闭 VNC（远程画面，配合 --vnc-pass 设密码）")
+    parser.add_argument("--vnc-ssl", choices=["on", "off"], metavar="{on,off}",
+                        help="VNC 通道是否走 TLS（off = 明文 RFB，可嗅探）")
     parser.add_argument("--vnc-pass", metavar="PASS",
                         help=f"VNC 密码，最多 {VNC_PASSWORD_MAX} 位")
     parser.add_argument("--status", action="store_true", help="只查询，不修改")
@@ -592,7 +638,8 @@ def main():
     if args.clear and args.target:
         print("错误: --clear 与 -t 互斥", file=sys.stderr)
         sys.exit(1)
-    if args.status and (args.target or args.reset or args.iso or args.eject or args.vnc):
+    if args.status and (args.target or args.reset or args.iso or args.eject
+                        or args.vnc or args.vnc_ssl):
         print("错误: --status 只查询，不能与其他动作组合", file=sys.stderr)
         sys.exit(1)
     if args.vnc_pass and not args.vnc:
@@ -602,8 +649,9 @@ def main():
         print(f"错误: VNC 密码最多 {VNC_PASSWORD_MAX} 位（当前 {len(args.vnc_pass)} 位）",
               file=sys.stderr)
         sys.exit(1)
-    if args.vnc and (args.target or args.iso or args.eject or args.reset):
-        print("错误: --vnc 是独立动作，不能与引导/ISO/重启组合", file=sys.stderr)
+    if (args.vnc or args.vnc_ssl) and (args.target or args.iso or args.eject
+                                       or args.reset):
+        print("错误: VNC 配置是独立动作，不能与引导/ISO/重启组合", file=sys.stderr)
         sys.exit(1)
 
     target = None
@@ -619,9 +667,10 @@ def main():
 
     # --reset 单独使用 = 只重启，不改引导（例：让 BIOS pending 生效）
     reset_only = args.reset and not any([args.iso, args.eject, target])
-    if not any([args.status, args.eject, args.iso, target, args.reset, args.vnc]):
+    if not any([args.status, args.eject, args.iso, target, args.reset,
+                args.vnc, args.vnc_ssl]):
         print("错误: 需要指定动作：-t TARGET / --status / --eject / --clear / "
-              "--iso URL / --reset / --vnc", file=sys.stderr)
+              "--iso URL / --reset / --vnc / --vnc-ssl", file=sys.stderr)
         sys.exit(1)
 
     # 提前校验 ISO URL，避免批量跑完才发现统统格式错误
@@ -653,6 +702,7 @@ def main():
         "wait": args.wait,
         "reset_only": reset_only,
         "vnc": args.vnc,
+        "vnc_ssl": args.vnc_ssl,
         "vnc_pass": args.vnc_pass,
     }
 
@@ -688,13 +738,23 @@ def main():
             bits.append(f"引导={target}/{mode}")
         if args.reset:
             bits.append(f"重启({args.reset_type})")
-        if args.vnc:
-            bits.append(f"VNC={args.vnc}" + ("(设密码)" if args.vnc_pass else ""))
+        if args.vnc or args.vnc_ssl:
+            vnc_bits = []
+            if args.vnc:
+                vnc_bits.append(args.vnc)
+            if args.vnc_ssl:
+                vnc_bits.append(f"SSL={args.vnc_ssl}")
+            if args.vnc_pass:
+                vnc_bits.append("设密码")
+            bits.append("VNC=" + "+".join(vnc_bits))
         action = " + ".join(bits) + (" [DRY RUN]" if args.dry_run else "")
 
     total = len(hosts)
     print(f"动作: {action}", file=sys.stderr)
     print(f"共 {total} 台, 并发: {args.jobs}", file=sys.stderr)
+    if args.vnc_ssl == "off":
+        print("  ⚠ 关闭 TLS 后 VNC 为明文 RFB，密码可被嗅探；"
+              "只在内网或 SSH 隧道内使用", file=sys.stderr)
     print(f"{'─' * 62}", file=sys.stderr)
 
     results = []
@@ -714,7 +774,11 @@ def main():
             else:
                 tgt = r["target_after"]
             iso = f" ISO={r['iso_before']}" if r["iso_before"] else ""
-            vnc = f"  VNC={r['vnc']}" if r["vnc"] else ""
+            vnc = ""
+            if r["vnc"]:
+                vnc += f" VNC={r['vnc']}"
+            if r["vnc_ssl"]:
+                vnc += f" SSL={r['vnc_ssl']}"
             print(
                 f"  [{done}/{total}] {r['bmc_ip']} SN={r['sn']} "
                 f"电源={r['power_before']}{iso} 引导={tgt}{vnc} [{r['status']}]"
@@ -727,11 +791,12 @@ def main():
     with open(output, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["bmc_ip", "sn", "power_before", "iso_before",
-                    "target_before", "target_after", "vnc", "status", "error"])
+                    "target_before", "target_after", "vnc", "vnc_ssl",
+                    "status", "error"])
         for r in results:
             w.writerow([r["bmc_ip"], r["sn"], r["power_before"], r["iso_before"],
                         r["target_before"], r["target_after"], r["vnc"],
-                        r["status"], r["error"]])
+                        r["vnc_ssl"], r["status"], r["error"]])
 
     ok = sum(1 for r in results if r["status"].startswith("OK"))
     skip = sum(1 for r in results if r["status"].startswith("SKIP"))
