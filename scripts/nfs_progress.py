@@ -107,6 +107,9 @@ def main():
                     help="只显示该 IP 尾号范围，如 21-40")
     ap.add_argument("--watch", type=int, default=0, metavar="SEC",
                     help="持续刷新，间隔 SEC 秒（0=只查一次）")
+    ap.add_argument("--done-at", type=float, default=18.0, metavar="PCT",
+                    help="读取停滞时，进度 >= 该值判定为已装完，否则判定失败 "
+                         "(默认 18%%，实测装完约停在 21%%)")
     ap.add_argument("--ssh-opt", action="append", default=[],
                     help="额外 ssh 参数，如 -o ConnectTimeout=5")
     args = ap.parse_args()
@@ -126,6 +129,7 @@ def main():
         return int(ip.rsplit(".", 1)[-1])
 
     prev = {}
+    stalls = {}
     try:
         while True:
             data = sample(args.nfs_host, ssh_opts)
@@ -143,19 +147,35 @@ def main():
                 print("\033[2J\033[H", end="")   # 清屏
 
             stamp = time.strftime("%H:%M:%S")
-            print(f"[{stamp}] 挂载中: {len(ips)} 台    ISO: {human(iso)}")
-            print(f"{'IP':<17}{'已读':<12}{'进度':<9}{'速度'}")
-            print("-" * 52)
+            print(f"[{stamp}] 挂载中: {len(ips)} 台    ISO: {human(iso)}"
+                  f"    装完起点≈{args.done_at}%")
+            print(f"{'IP':<17}{'已读':<12}{'进度':<8}{'速度':<12}{'判断'}")
+            print("-" * 68)
             for ip in ips:
                 b = data[ip]
                 pct = b / iso * 100
                 speed = ""
+                judged = ""
                 if ip in prev:
                     d = (b - prev[ip]) / max(args.watch, 1)
-                    speed = f"{human(d)}/s" if d > 0 else "停滞"
+                    if d > 0:
+                        speed = f"{human(d)}/s"
+                        stalls[ip] = 0
+                    else:
+                        # NFS 读是小块间歇性的，单轮无增量很常见。
+                        # 连续两轮无增量才判定停滞。
+                        stalls[ip] = stalls.get(ip, 0) + 1
+                        if stalls[ip] < 2:
+                            speed = "…"
+                        else:
+                            speed = "停滞"
+                            if pct >= args.done_at:
+                                judged = "✓ 已装完"
+                            else:
+                                judged = "✗ 失败/卡死"
                 bar = "#" * int(pct / 5)
-                print(f"{ip:<17}{human(b):<12}{pct:6.1f}%  {bar:<20}{speed}")
-            print("-" * 52)
+                print(f"{ip:<17}{human(b):<12}{pct:6.1f}%  {bar:<10}{speed:<12}{judged}")
+            print("-" * 68)
             prev = data
 
             if not args.watch:
