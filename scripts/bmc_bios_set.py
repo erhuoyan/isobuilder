@@ -81,21 +81,23 @@ def redfish_get_with_etag(ip, user, passwd, path, timeout=15):
 
 
 def redfish_patch(ip, user, passwd, path, payload, etag=None, timeout=15):
-    """PATCH，返回 (http_status, response_body)。"""
-    url = f"https://{ip}{path}"
-    cmd = [
-        "curl", "-sk", "-u", f"{user}:{passwd}", "--connect-timeout", "10",
-        "--max-time", str(timeout), "-X", "PATCH",
-        "-H", "Content-Type: application/json",
-        "-w", "\n__HTTP_CODE__%{http_code}",
-    ]
-    if etag:
-        cmd += ["-H", f"If-Match: {etag}"]
-    cmd += ["-d", json.dumps(payload), url]
+    """PATCH，返回 (http_status, response_body)。412/428 时取最新 ETag 重试一次。"""
+    def run(with_etag):
+        cmd = [
+            "curl", "-sk", "-u", f"{user}:{passwd}", "--connect-timeout", "10",
+            "--max-time", str(timeout), "-X", "PATCH",
+            "-H", "Content-Type: application/json",
+            "-w", "\n__HTTP_CODE__%{http_code}",
+        ]
+        if with_etag:
+            cmd += ["-H", f"If-Match: {with_etag}"]
+        cmd += ["-d", json.dumps(payload), f"https://{ip}{path}"]
 
-    try:
-        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           universal_newlines=True, timeout=timeout + 5)
+        try:
+            r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               universal_newlines=True, timeout=timeout + 5)
+        except Exception as e:
+            return 0, {"error": str(e)}
         output = r.stdout
         # 提取 HTTP 状态码
         http_code = 0
@@ -106,14 +108,20 @@ def redfish_patch(ip, user, passwd, path, payload, etag=None, timeout=15):
                 http_code = int(parts[1].strip())
             except ValueError:
                 pass
-        body = None
         try:
-            body = json.loads(output)
+            return http_code, json.loads(output)
         except Exception:
-            pass
-        return http_code, body
-    except Exception as e:
-        return 0, {"error": str(e)}
+            return http_code, None
+
+    http_code, body = run(etag)
+    # 412 = If-Match 已过期（pending 被并发改过），428 = 服务端要求 If-Match
+    # 而本次没带。重新 GET 拿最新 ETag 再试一次；ETag 没变说明问题不在
+    # If-Match，重试也是白费一次请求。
+    if http_code in (412, 428):
+        _, fresh_etag = redfish_get_with_etag(ip, user, passwd, path)
+        if fresh_etag and fresh_etag != etag:
+            http_code, body = run(fresh_etag)
+    return http_code, body
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

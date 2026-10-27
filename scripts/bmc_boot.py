@@ -123,7 +123,7 @@ def redfish_get(ip, user, passwd, path, timeout=15):
 
 
 def redfish_patch(ip, user, passwd, path, payload, etag=None, timeout=20):
-    """PATCH，返回 (http_code, body)。412 时自动带 ETag 重试一次。"""
+    """PATCH，返回 (http_code, body)。412/428 时取最新 ETag 重试一次。"""
     def run(with_etag):
         args = ["-u", f"{user}:{passwd}", "-X", "PATCH",
                 "-H", "Content-Type: application/json",
@@ -150,16 +150,18 @@ def redfish_patch(ip, user, passwd, path, payload, etag=None, timeout=20):
             return code, None
 
     code, body = run(etag)
-    # 华为 BMC 强制 If-Match：没带 ETag 会返回 412
-    if code == 412 and etag is None:
+    # 412 = If-Match 已过期（别人刚改过这个资源），428 = 服务端要求 If-Match
+    # 而本次没带。两种都靠"重新 GET 拿最新 ETag 再试一次"收敛；ETag 没变说明
+    # 问题不在 ETag，重试也是白费一次请求。
+    if code in (412, 428):
         _, fresh_etag = redfish_get(ip, user, passwd, path)
-        if fresh_etag:
+        if fresh_etag and fresh_etag != etag:
             code, body = run(fresh_etag)
     return code, body
 
 
 def redfish_post(ip, user, passwd, path, payload=None, timeout=30):
-    """POST 动作，返回 (http_code, body)。412 时带 ETag 重试一次。"""
+    """POST 动作，返回 (http_code, body)。412/428 时带 ETag 重试一次。"""
     def run(with_etag):
         args = ["-u", f"{user}:{passwd}", "-X", "POST",
                 "-H", "Content-Type: application/json",
@@ -186,8 +188,11 @@ def redfish_post(ip, user, passwd, path, payload=None, timeout=30):
             return code, None
 
     code, body = run(None)
-    if code == 412:
-        _, etag = redfish_get(ip, user, passwd, SYSTEM_PATH)
+    # ETag 属于被操作的那个资源，不是 System：VirtualMedia 的动作要用 CD
+    # 资源的 ETag，拿 System 的 ETag 去重试只会再 412 一次。
+    if code in (412, 428):
+        resource = path.split("/Actions/", 1)[0]
+        _, etag = redfish_get(ip, user, passwd, resource)
         if etag:
             code, body = run(etag)
     return code, body
