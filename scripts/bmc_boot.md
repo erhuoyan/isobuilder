@@ -46,7 +46,7 @@
 # 开启并设密码
 python3 scripts/bmc_boot.py -f bmcinfo.txt --vnc on --vnc-pass 'JCss%6!8'
 
-# 查状态（--status 输出里带 VNC=on/off SSL=on/off）
+# 查状态（--status 输出里带 VNC=on/off/unknown SSL=on/off）
 python3 scripts/bmc_boot.py -f bmcinfo.txt --status
 
 # 关闭
@@ -80,14 +80,75 @@ vncviewer 100.88.20.2             # 端口默认 5900
 # ✗ 报 PropertyNotWritable
 PATCH /redfish/v1/Managers/1/NetworkProtocol  {"RFB":{"ProtocolEnabled":true}}
 
-# ✓ 正确
+# ✓ 正确（厂商键按机器实际暴露的为准）
 PATCH /redfish/v1/Managers/1/NetworkProtocol
-{"Oem":{"JD":{"VNC":{"ProtocolEnabled":true}}}}
+{"Oem":{"Huawei":{"VNC":{"ProtocolEnabled":true}}}}   # 或 {"Oem":{"JD":{...}}}
 ```
+
+**厂商键是自动识别的**，顺序为 `Oem.Huawei` → `Oem.JD`：
+
+- 优先选真正带 `VNC` 段的那个命名空间（JD 定制版 iBMC 上两个键可能同时存在）；
+  都没带 VNC 段时，退化为"厂商键存在"；
+- 两个命名空间都带 VNC 时按上面的顺序取第一个——**批量操作前先用 `--status`
+  在一台机器上确认**（`VNC=on/off` 与 Web 界面一致即可，`VNC=unknown` 说明没识别出来）；
+- 两个键都识别不到时**不猜**：写操作直接 FAIL 并打印实际看到的 `Oem=` 键名，
+  `--status` 报 `VNC=unknown`。盲写一个不存在的命名空间会被 BMC 忽略或 400，
+  回读又对不上，只会得到误导性的"状态不符"。
 
 **② 密码最长 8 位**
 
 超过报 `iBMC.1.0.StringValueTooLong`。默认 BMC 密码 `JCss%6!8` 正好 8 位，可直接复用。
+上限由各厂商的 `password_max` 决定，批量跑时逐台按该厂商上限校验，
+且在校验通过前不写入任何东西。
+
+### 新增 OEM 适配
+
+厂商差异全部收在 `VncOem` 类里（`scripts/bmc_boot.py` 顶部「OEM 适配」段），
+`process_one` 只跟适配器打交道，不认具体厂商。
+
+| 成员 | 作用 |
+|---|---|
+| `name` / `namespace` | 厂商名（报错文案）/ `NetworkProtocol.Oem` 下的键 |
+| `netproto_path` / `service_path` | 开关资源路径 / 密码与 TLS 的资源路径 |
+| `password_max` | 该厂商的 VNC 密码长度上限 |
+| `matches(netproto, strict)` | 是否属于本厂商（`strict` = 是否要求已有 `VNC` 段） |
+| `read_enabled(netproto)` | 读回开关，字段缺失返回 `None`（不是 `False`） |
+| `patch_body(enabled)` | 开关的 PATCH body |
+
+接入分两种：
+
+```python
+# ① 形态相同（iBMC 家族，只是命名空间不同）——两行
+class InspurVncOem(VncOem):
+    name = "Inspur"
+    namespace = "Inspur"
+
+# ② 资源路径 / 字段名都不同——覆盖三个方法
+class DellVncOem(VncOem):
+    name = "Dell"
+    namespace = "Dell"
+    service_path = "/redfish/v1/Managers/1/OemVnc"
+    password_max = 16
+
+    def read_enabled(self, netproto):
+        oem = (netproto or {}).get("Oem") or {}
+        return ((oem.get("Dell") or {}).get("VNC") or {}).get("Enabled")
+
+    def patch_body(self, enabled):
+        return {"Oem": {"Dell": {"VNC": {"Enabled": enabled}}}}
+```
+
+然后登记到 `VNC_OEMS`：
+
+```python
+VNC_OEMS = (HuaweiVncOem(), JDVncOem(), InspurVncOem(), DellVncOem())
+```
+
+`VNC_PASSWORD_MAX_ANY`（CLI 层上限）和 `--help` 里的厂商列表都由注册表推导，
+不用另外改。命中顺序 = 注册顺序，且"已有 VNC 段"优先于"命名空间存在"。
+
+> 报错文案、`--status` 的 `unknown`、写入前的密码长度校验都走适配器，
+> 新厂商不需要动 `process_one`。
 
 ### 关闭 TLS（`--vnc-ssl off`）
 

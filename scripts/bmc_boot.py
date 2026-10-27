@@ -41,11 +41,102 @@ VM_INSERT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.In
 VM_EJECT_PATH = "/redfish/v1/Managers/1/VirtualMedia/CD/Actions/VirtualMedia.EjectMedia"
 
 # VNC 开关在 NetworkProtocol 的 OEM 段（标准 RFB 字段只读）；
-# 密码与 TLS 开关（SSLEncryptionEnabled）都在 VncService，
-# 密码最长 8 位，超长报 StringValueTooLong。
+# 密码与 TLS 开关（SSLEncryptionEnabled）都在 VncService。
+# 厂商差异见下方「OEM 适配」。
 NETPROTO_PATH = "/redfish/v1/Managers/1/NetworkProtocol"
 VNC_SERVICE_PATH = "/redfish/v1/Managers/1/VncService"
+# iBMC 的默认上限（超长报 StringValueTooLong），同时也是 VncOem.password_max 的默认值
 VNC_PASSWORD_MAX = 8
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  OEM 适配
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class VncOem(object):
+    """
+    一个 OEM 厂商的 VNC 适配点：开关在哪、怎么读、怎么写。
+
+    默认实现对应华为 iBMC 家族（JD 定制版同源）：开关在
+    NetworkProtocol.Oem.<namespace>.VNC.ProtocolEnabled，标准 RFB 段只读；
+    密码与 TLS 在 VncService。
+
+    接新厂商：
+      - 形态相同（只是命名空间不同）→ 继承并只写 name / namespace；
+      - 资源路径或字段名不同 → 再覆盖 matches / read_enabled / patch_body。
+    """
+
+    name = ""                  # 厂商名，出现在报错文案里
+    namespace = ""             # NetworkProtocol.Oem 下的键
+    netproto_path = NETPROTO_PATH
+    service_path = VNC_SERVICE_PATH
+    password_max = VNC_PASSWORD_MAX
+
+    def matches(self, netproto, strict):
+        """
+        这台 BMC 是否属于本厂商。
+
+        strict=True  要求 Oem.<namespace> 里已经有 VNC 段——那才是真正持有开关
+                     状态的命名空间；
+        strict=False 只要命名空间键存在（首次开启前 VNC 段可能还没生成）。
+        """
+        oem = (netproto or {}).get("Oem") or {}
+        if not isinstance(oem.get(self.namespace), dict):
+            return False
+        return (not strict) or ("VNC" in oem[self.namespace])
+
+    def read_enabled(self, netproto):
+        """读回开关；字段缺失返回 None，不要当成 False。"""
+        oem = (netproto or {}).get("Oem") or {}
+        vnc = (oem.get(self.namespace) or {}).get("VNC") or {}
+        if "ProtocolEnabled" not in vnc:
+            return None
+        return bool(vnc["ProtocolEnabled"])
+
+    def patch_body(self, enabled):
+        """开关的 PATCH body（厂商命名空间不同，body 就不同）。"""
+        return {"Oem": {self.namespace: {"VNC": {"ProtocolEnabled": enabled}}}}
+
+
+class HuaweiVncOem(VncOem):
+    name = "Huawei"
+    namespace = "Huawei"
+
+
+class JDVncOem(VncOem):
+    name = "JD"
+    namespace = "JD"
+
+
+# 登记即接入；命中多个厂商时按本顺序取第一个（strict 命中优先于宽松命中）。
+VNC_OEMS = (HuaweiVncOem(), JDVncOem())
+
+# CLI 层用所有厂商里最宽松的上限，逐台再按该厂商自己的 password_max 校验
+VNC_PASSWORD_MAX_ANY = max(o.password_max for o in VNC_OEMS)
+
+
+def resolve_vnc_oem(netproto):
+    """
+    认出这台 BMC 的 VNC 适配。
+
+    先找真正含 VNC 段的命名空间，再退化到"命名空间存在即可"；都认不出返回
+    None，由调用方明确报错——不能猜一个键盲写：写进不存在的命名空间会被 BMC
+    忽略或 400，回读又对不上，最后只会得到误导性的"状态不符"。
+    """
+    for strict in (True, False):
+        for oem in VNC_OEMS:
+            if oem.matches(netproto, strict):
+                return oem
+    return None
+
+
+def _known_oem_names():
+    return " / ".join(o.name for o in VNC_OEMS)
+
+
+def _oem_keys(netproto):
+    return ", ".join(((netproto or {}).get("Oem") or {})) or "空"
+
 
 # 用户输入 → Redfish BootSourceOverrideTarget
 TARGET_MAP = {
@@ -79,7 +170,7 @@ def _curl(args, timeout):
         r = subprocess.run(
             ["curl", "-sk", "--connect-timeout", "10", "--max-time", str(timeout)] + args,
             # 用 3.6 也能跑的写法：capture_output/text 是 3.7 新增参数，
-            # 在 3.6 上会抛 TypeError 且被下面的 except 吞掉，误报“无法连接BMC”
+            # 在 3.6 上会抛 TypeError 且被下面的 except 吞掉，误报"无法连接BMC"
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             universal_newlines=True, timeout=timeout + 5,
         )
@@ -273,8 +364,10 @@ def process_one(ip, user, passwd, opts):
     if opts["status"]:
         r["target_after"] = r["target_before"]
         net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
-        vnc = (net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
-        r["vnc"] = "on" if vnc.get("ProtocolEnabled") else "off"
+        oem = resolve_vnc_oem(net)
+        # 认不出厂商 / 字段缺失就别报 off：那是在编造"VNC 已关闭"
+        enabled = oem.read_enabled(net) if oem else None
+        r["vnc"] = "unknown" if enabled is None else ("on" if enabled else "off")
         svc, _ = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
         if svc is not None:
             r["vnc_ssl"] = "on" if svc.get("SSLEncryptionEnabled") else "off"
@@ -297,6 +390,7 @@ def process_one(ip, user, passwd, opts):
             return r
 
         notes = []
+        oem = None
 
         # 开关：标准 RFB 字段只读，必须写 OEM 段
         if opts["vnc"]:
@@ -305,9 +399,24 @@ def process_one(ip, user, passwd, opts):
                 r["status"] = "FAIL"
                 r["error"] = "无法读取 NetworkProtocol"
                 return r
+            oem = resolve_vnc_oem(net)
+            if oem is None:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = ("无法识别 VNC 所在 OEM 厂商"
+                              f"（Oem={_oem_keys(net)}）；"
+                              f"已知支持 {_known_oem_names()}")
+                return r
+            # 密码长度本地就能判，趁写入任何东西之前挡掉，别改了一半才失败
+            if opts["vnc_pass"] and len(opts["vnc_pass"]) > oem.password_max:
+                r["target_after"] = r["target_before"]
+                r["status"] = "FAIL"
+                r["error"] = (f"{oem.name} 的 VNC 密码最多 {oem.password_max} 位"
+                              f"（当前 {len(opts['vnc_pass'])} 位）")
+                return r
             code, body = redfish_patch(
-                ip, user, passwd, NETPROTO_PATH,
-                {"Oem": {"JD": {"VNC": {"ProtocolEnabled": want_on}}}},
+                ip, user, passwd, oem.netproto_path,
+                oem.patch_body(want_on),
                 etag=net_etag,
             )
             if code != 200:
@@ -317,23 +426,18 @@ def process_one(ip, user, passwd, opts):
                 return r
             notes.append("VNC开" if want_on else "VNC关")
 
-        # SSL 与密码同属 VncService，合并成一次 PATCH
+        # SSL 与密码同属 VNC 服务资源（默认 VncService），合并成一次 PATCH
         svc_payload = {}
         if opts["vnc_ssl"]:
             svc_payload["SSLEncryptionEnabled"] = want_ssl
         if opts["vnc_pass"]:
-            if len(opts["vnc_pass"]) > VNC_PASSWORD_MAX:
-                r["target_after"] = r["target_before"]
-                r["status"] = "FAIL"
-                r["error"] = (f"VNC 密码最多 {VNC_PASSWORD_MAX} 位"
-                              f"（当前 {len(opts['vnc_pass'])} 位）")
-                return r
             svc_payload["Password"] = opts["vnc_pass"]
 
+        svc_path = oem.service_path if oem else VNC_SERVICE_PATH
         if svc_payload:
-            _, vnc_etag = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
+            _, vnc_etag = redfish_get(ip, user, passwd, svc_path)
             code, body = redfish_patch(
-                ip, user, passwd, VNC_SERVICE_PATH, svc_payload, etag=vnc_etag,
+                ip, user, passwd, svc_path, svc_payload, etag=vnc_etag,
             )
             if code != 200:
                 r["target_after"] = r["target_before"]
@@ -348,9 +452,9 @@ def process_one(ip, user, passwd, opts):
         # 回读确认，避免 200 假成功
         if opts["vnc"]:
             net, _ = redfish_get(ip, user, passwd, NETPROTO_PATH)
-            actual = bool((net or {}).get("Oem", {}).get("JD", {}).get("VNC", {})
-                          .get("ProtocolEnabled"))
-            r["vnc"] = "on" if actual else "off"
+            # 用写入时的同一个适配器回读，避免写入/校验各猜一个命名空间
+            actual = oem.read_enabled(net)
+            r["vnc"] = "unknown" if actual is None else ("on" if actual else "off")
             if actual != want_on:
                 r["target_after"] = r["target_before"]
                 r["status"] = "FAIL"
@@ -359,11 +463,11 @@ def process_one(ip, user, passwd, opts):
                 return r
 
         if opts["vnc_ssl"]:
-            svc, _ = redfish_get(ip, user, passwd, VNC_SERVICE_PATH)
+            svc, _ = redfish_get(ip, user, passwd, svc_path)
             if svc is None:
                 r["target_after"] = r["target_before"]
                 r["status"] = "FAIL"
-                r["error"] = "VNC SSL 写入后无法回读 VncService"
+                r["error"] = f"VNC SSL 写入后无法回读 {svc_path}"
                 return r
             actual_ssl = bool(svc.get("SSLEncryptionEnabled"))
             r["vnc_ssl"] = "on" if actual_ssl else "off"
@@ -607,7 +711,9 @@ def main():
             "VNC (独立动作，不能与引导/ISO/重启组合):",
             "  --vnc on|off       开关远程画面",
             "  --vnc-ssl on|off   通道是否 TLS 加密（off = 明文 RFB，默认 on）",
-            "  --vnc-pass PASS    VNC 密码，最多 8 位",
+            "  --vnc-pass PASS    VNC 密码，最多 8 位（逐台按厂商上限校验）",
+            "  厂商自动识别 (%s)，识别不到直接报错，不盲写"
+            % " / ".join("Oem." + o.name for o in VNC_OEMS),
             "",
            f"默认账号: {DEFAULT_USER} / {DEFAULT_PASS}",
             "",
@@ -647,7 +753,7 @@ def main():
     parser.add_argument("--vnc-ssl", choices=["on", "off"], metavar="{on,off}",
                         help="VNC 通道是否走 TLS（off = 明文 RFB，可嗅探）")
     parser.add_argument("--vnc-pass", metavar="PASS",
-                        help=f"VNC 密码，最多 {VNC_PASSWORD_MAX} 位")
+                        help=f"VNC 密码，最多 {VNC_PASSWORD_MAX_ANY} 位（逐台按厂商上限校验）")
     parser.add_argument("--status", action="store_true", help="只查询，不修改")
     parser.add_argument("--clear", action="store_true", help="清除引导重定向 (= -t none)")
     parser.add_argument("--dry-run", action="store_true", help="只读不写")
@@ -675,9 +781,10 @@ def main():
     if args.vnc_pass and not args.vnc:
         print("错误: --vnc-pass 需要配合 --vnc on", file=sys.stderr)
         sys.exit(1)
-    if args.vnc_pass and len(args.vnc_pass) > VNC_PASSWORD_MAX:
-        print(f"错误: VNC 密码最多 {VNC_PASSWORD_MAX} 位（当前 {len(args.vnc_pass)} 位）",
-              file=sys.stderr)
+    # 这里只挡所有厂商都接受不了的长度，具体上限逐台按厂商校验
+    if args.vnc_pass and len(args.vnc_pass) > VNC_PASSWORD_MAX_ANY:
+        print(f"错误: VNC 密码最多 {VNC_PASSWORD_MAX_ANY} 位"
+              f"（当前 {len(args.vnc_pass)} 位）", file=sys.stderr)
         sys.exit(1)
     if (args.vnc or args.vnc_ssl) and (args.target or args.iso or args.eject
                                        or args.reset):
